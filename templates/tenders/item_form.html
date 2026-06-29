@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Edit Item | Tender Designer{% endblock %}
+{% block content %}
+<section class="hero-card mb-4">
+  <div>
+    <span class="eyebrow">Item Review</span>
+    <h1 class="display-title">Edit Tender Item</h1>
+    <p class="hero-copy mb-0">Update status, quantity, pricing, and source notes directly from the working tender flow.</p>
+  </div>
+</section>
+
+<form method="post" class="card glass-panel">
+  <div class="card-body row g-3">
+    <div class="col-12">
+      <label class="form-label">Description</label>
+      <input class="form-control" name="description" value="{{ item.description }}">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Quantity Required</label>
+      <input class="form-control" name="quantity_required" value="{{ item.quantity_required }}">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Unit Price</label>
+      <input class="form-control" name="unit_price" value="{{ item.unit_price or '' }}">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Status</label>
+      <input class="form-control" name="status" value="{{ item.status }}">
+    </div>
+    <div class="col-12">
+      <label class="form-label">Specification Summary</label>
+      <textarea class="form-control" name="specification_summary" rows="4">{{ item.specification_summary or '' }}</textarea>
+    </div>
+    <div class="col-12">
+      <label class="form-label">Source Reference</label>
+      <textarea class="form-control" name="source_reference" rows="3">{{ item.source_reference or '' }}</textarea>
+    </div>
+  </div>
+  <div class="card-footer d-flex justify-content-between">
+    <a class="btn btn-outline-secondary" href="{{ url_for('tenders.detail_tender', tender_id=item.tender_id) }}">Back to Tender</a>
+    <button class="btn btn-primary" type="submit">Save Item</button>
+  </div>
+</form>
+{% endblock %}

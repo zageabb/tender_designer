@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}{{ "Create" if is_new else "Edit" }} {{ model.__name__ }}{% endblock %}
+{% block content %}
+<section class="hero-card mb-4">
+  <div>
+    <span class="eyebrow">Record Editor</span>
+    <h1 class="display-title">{{ "Create" if is_new else "Edit" }} {{ model.__name__ }}</h1>
+    <p class="hero-copy mb-0">Use this practical editor for corrections, overrides, and manual maintenance.</p>
+  </div>
+</section>
+<form method="post" class="card glass-panel">
+  <div class="card-body row g-3">
+    {% for column in inspector.columns %}
+      {% if not column.primary_key %}
+      <div class="col-md-6">
+        <label class="form-label">{{ column.name }}</label>
+        <input class="form-control" name="{{ column.name }}" value="{{ record|attr(column.name) if record else '' }}">
+      </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+  <div class="card-footer d-flex justify-content-between">
+    <a class="btn btn-outline-secondary" href="{{ url_for('admin.list_records', model_slug=model_slug) }}">Back</a>
+    <button class="btn btn-primary" type="submit">Save</button>
+  </div>
+</form>
+{% endblock %}

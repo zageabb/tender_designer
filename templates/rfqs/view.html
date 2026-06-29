@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}RFQ {{ rfq.id }} | Tender Designer{% endblock %}
+{% block content %}
+<section class="hero-card mb-4">
+  <div>
+    <span class="eyebrow">RFQ Ready</span>
+    <h1 class="display-title">{{ rfq.subject }}</h1>
+    <p class="hero-copy mb-0">Review the generated line set and download the email draft for your mail client.</p>
+  </div>
+  <a class="btn btn-primary btn-lg" href="{{ url_for('rfqs.download_rfq', rfq_id=rfq.id) }}">Download .eml</a>
+</section>
+
+<div class="row g-4">
+  <div class="col-xl-7">
+    <div class="card glass-panel h-100">
+      <div class="card-header">RFQ Lines</div>
+      <div class="table-responsive">
+        <table class="table align-middle mb-0">
+          <thead>
+            <tr><th>Description</th><th>Quantity</th><th>Item Link</th></tr>
+          </thead>
+          <tbody>
+            {% for line in rfq.lines %}
+            <tr>
+              <td>{{ line.description }}</td>
+              <td>{{ line.quantity }}</td>
+              <td>
+                {% if line.tender_sub_item_id %}
+                Sub-item #{{ line.tender_sub_item_id }}
+                {% elif line.tender_item_id %}
+                Item #{{ line.tender_item_id }}
+                {% else %}
+                -
+                {% endif %}
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="3" class="text-muted">No lines generated.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="col-xl-5">
+    <div class="card glass-panel h-100">
+      <div class="card-header">Email Preview</div>
+      <div class="card-body">
+        <div class="small text-muted mb-2">To: {{ rfq.supplier_email or "Not set" }}</div>
+        <pre class="email-preview">{{ rfq.introduction_text }}</pre>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+

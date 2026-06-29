@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Edit Question | Tender Designer{% endblock %}
+{% block content %}
+<section class="hero-card mb-4">
+  <div>
+    <span class="eyebrow">Manual Review</span>
+    <h1 class="display-title">Edit Tender Question</h1>
+    <p class="hero-copy mb-0">Every extracted field can be corrected here before final answer drafting or export.</p>
+  </div>
+</section>
+
+<form method="post" class="card glass-panel">
+  <div class="card-body row g-3">
+    <div class="col-md-3">
+      <label class="form-label">Question Number</label>
+      <input class="form-control" name="question_number" value="{{ question.question_number or '' }}">
+    </div>
+    <div class="col-md-5">
+      <label class="form-label">Section</label>
+      <input class="form-control" name="section" value="{{ question.section or '' }}">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Status</label>
+      <input class="form-control" name="answer_status" value="{{ question.answer_status or 'Unanswered' }}">
+    </div>
+    <div class="col-12">
+      <label class="form-label">Question Text</label>
+      <textarea class="form-control" name="question_text" rows="4">{{ question.question_text }}</textarea>
+    </div>
+    <div class="col-12">
+      <label class="form-label">Suggested Answer</label>
+      <textarea class="form-control" name="suggested_answer" rows="5">{{ question.suggested_answer or '' }}</textarea>
+    </div>
+    <div class="col-12">
+      <label class="form-label">Final Answer</label>
+      <textarea class="form-control" name="answer_text" rows="5">{{ question.answer_text or '' }}</textarea>
+    </div>
+    <div class="col-12">
+      <label class="form-label">Source Reference</label>
+      <textarea class="form-control" name="source_reference" rows="3">{{ question.source_reference or '' }}</textarea>
+    </div>
+  </div>
+  <div class="card-footer d-flex justify-content-between">
+    <a class="btn btn-outline-secondary" href="{{ url_for('tenders.detail_tender', tender_id=question.tender_id) }}">Back to Tender</a>
+    <button class="btn btn-primary" type="submit">Save Question</button>
+  </div>
+</form>
+{% endblock %}

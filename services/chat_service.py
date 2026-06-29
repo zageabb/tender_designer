@@ -1,0 +1,665 @@
+from __future__ import annotations
+
+import json
+import re
+from datetime import datetime
+from decimal import Decimal
+
+from pathlib import Path
+
+from database import db
+from models import ChatAction, ChatMessage, ChatSession, ChatUpload, Tender, TenderDocument, TenderItem
+from services.file_storage import ensure_tender_directories
+from services.prompt_service import render_prompt
+
+
+ALLOWED_UPDATE_FIELDS = {
+    "Tender": {"customer_name", "title", "status", "submission_time", "currency", "notes"},
+    "TenderItem": {"description", "quantity_required", "unit_price", "status", "specification_summary"},
+    "TenderSubItem": {"description", "quantity", "unit_price", "status", "notes"},
+    "RFQ": {"supplier_name", "supplier_email", "status", "subject", "notes"},
+    "TenderQuestion": {"answer_text", "suggested_answer", "answer_status"},
+}
+
+
+def get_or_create_session(db, tender_id: int | None, page_context: dict | None) -> ChatSession:
+    query = ChatSession.query
+    if tender_id is None:
+        query = query.filter(ChatSession.tender_id.is_(None))
+    else:
+        query = query.filter_by(tender_id=tender_id)
+    session = query.order_by(ChatSession.updated_at.desc()).first()
+    if session is None:
+        session = ChatSession(tender_id=tender_id, page_context_json=json.dumps(page_context or {}))
+        db.session.add(session)
+        db.session.flush()
+    return session
+
+
+def add_chat_message(
+    db,
+    chat_session: ChatSession,
+    role: str,
+    message_text: str,
+    intermediate_steps: list[str] | None = None,
+    actions: list[dict] | None = None,
+) -> ChatMessage:
+    chat_session.updated_at = datetime.utcnow()
+    message = ChatMessage(
+        chat_session=chat_session,
+        role=role,
+        message_text=message_text,
+        intermediate_steps_json=json.dumps(intermediate_steps or []),
+        proposed_actions_json=json.dumps(actions or []),
+    )
+    db.session.add(message)
+    return message
+
+
+def get_recent_messages(chat_session: ChatSession | None, limit: int = 24) -> list[dict]:
+    if chat_session is None:
+        return []
+    messages = (
+        ChatMessage.query.filter_by(chat_session_id=chat_session.id)
+        .order_by(ChatMessage.created_at.asc())
+        .limit(limit)
+        .all()
+    )
+    payload = []
+    for message in messages:
+        try:
+            steps = json.loads(message.intermediate_steps_json) if message.intermediate_steps_json else []
+        except json.JSONDecodeError:
+            steps = []
+        payload.append(
+            {
+                "role": message.role,
+                "message_text": message.message_text,
+                "intermediate_steps": steps,
+                "created_at": message.created_at.isoformat(),
+            }
+        )
+    return payload
+
+
+def _normalize(text: str) -> str:
+    return " ".join(text.lower().strip().split())
+
+
+def _heuristic_create_tender_request(normalized: str) -> bool:
+    verb_match = any(word in normalized for word in {"create", "make", "start", "open", "build", "initiate"})
+    noun_match = any(word in normalized for word in {"tender", "bid", "opportunity"})
+    reference_match = any(
+        phrase in normalized
+        for phrase in {"this", "document", "file", "upload", "from this", "from it"}
+    )
+    return ("create tender" in normalized) or (verb_match and noun_match and reference_match) or (verb_match and noun_match)
+
+
+def _heuristic_add_items_request(normalized: str, raw_message: str) -> bool:
+    action_match = any(
+        phrase in normalized
+        for phrase in {
+            "make items from this list",
+            "create items from this list",
+            "add items from this list",
+            "make items",
+            "create items",
+            "add items",
+        }
+    )
+    line_match = bool(re.search(r"(?m)^\s*\d+\s*x\s+.+", raw_message))
+    return action_match and line_match
+
+
+def _parse_item_request_lines(message: str) -> list[dict]:
+    items: list[dict] = []
+    for raw_line in message.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        match = re.match(r"^(\d+(?:\.\d+)?)\s*x\s+(.+)$", line, flags=re.IGNORECASE)
+        if not match:
+            continue
+        quantity = Decimal(match.group(1))
+        details = match.group(2).strip()
+        description = re.split(r"\s+[–-]\s+", details, maxsplit=1)[0].strip(" .")
+        if not description:
+            description = details[:120]
+        items.append(
+            {
+                "description": description[:255],
+                "quantity_required": str(quantity.normalize() if quantity == quantity.to_integral() else quantity),
+                "specification_summary": details,
+                "status": "Needs Review",
+                "source_reference": "Added from AI chat request.",
+            }
+        )
+    return items
+
+
+def _currency(value: Decimal | int | float | None, code: str) -> str:
+    if value is None:
+        return f"{code} 0.00"
+    return f"{code} {Decimal(value):,.2f}"
+
+
+def _top_missing_areas(tender: Tender) -> list[str]:
+    missing: list[str] = []
+    if not tender.documents:
+        missing.append("No tender documents have been uploaded.")
+    if not tender.items:
+        missing.append("No tender items have been extracted or added yet.")
+    if any(item.status in {"New", "Needs Review", "RFQ Required"} for item in tender.items):
+        missing.append("Some tender items still need review or supplier pricing.")
+    unanswered = [question for question in tender.questions if question.answer_status != "Answered"]
+    if unanswered:
+        missing.append(f"{len(unanswered)} tender questions are still not marked as answered.")
+    pending_rfqs = [rfq for rfq in tender.rfqs if rfq.status in {"Draft", "Downloaded", "Sent Manually"}]
+    if pending_rfqs:
+        missing.append(f"{len(pending_rfqs)} RFQs are still awaiting response or completion.")
+    return missing
+
+
+def _summarize_items(tender: Tender) -> tuple[str, list[str]]:
+    if not tender.items:
+        return "There are no tender items on this tender yet.", [
+            "Checked the current tender context.",
+            "No TenderItem records were found.",
+        ]
+    lines = []
+    for item in tender.items[:8]:
+        sub_count = len(item.sub_items)
+        sub_text = f", {sub_count} sub-items" if sub_count else ""
+        lines.append(
+            f"- {item.description}: qty {item.quantity_required}, status {item.status}{sub_text}, "
+            f"total {_currency(item.total_price, tender.currency)}"
+        )
+    message = "Here is the current item summary:\n" + "\n".join(lines)
+    return message, [
+        "Read the tender's item list from the database.",
+        "Included quantity, status, sub-item count, and current totals.",
+    ]
+
+
+def _summarize_questions(tender: Tender, unanswered_only: bool = False) -> tuple[str, list[str]]:
+    questions = tender.questions
+    if unanswered_only:
+        questions = [question for question in questions if question.answer_status != "Answered"]
+    if not questions:
+        if unanswered_only:
+            return "All tender questions are currently marked as answered.", [
+                "Checked the current tender's question list.",
+                "No unanswered questions remained.",
+            ]
+        return "There are no tender questions on this tender yet.", [
+            "Checked the current tender's question list.",
+            "No TenderQuestion records were found.",
+        ]
+    lines = [
+        f"- {question.question_number or 'Question'}: {question.question_text[:110]}"
+        f" ({question.answer_status})"
+        for question in questions[:8]
+    ]
+    intro = "These questions are still open:" if unanswered_only else "Here are the current tender questions:"
+    return intro + "\n" + "\n".join(lines), [
+        "Checked the current tender's question list.",
+        "Filtered by answer status where relevant.",
+    ]
+
+
+def _summarize_rfqs(tender: Tender, awaiting_only: bool = False) -> tuple[str, list[str]]:
+    rfqs = tender.rfqs
+    if awaiting_only:
+        rfqs = [rfq for rfq in rfqs if rfq.status in {"Draft", "Downloaded", "Sent Manually"}]
+    if not rfqs:
+        if awaiting_only:
+            return "There are no RFQs currently awaiting a supplier response.", [
+                "Checked the current tender's RFQ records.",
+                "No RFQs matched the pending-response statuses.",
+            ]
+        return "There are no RFQs on this tender yet.", [
+            "Checked the current tender's RFQ records.",
+            "No RFQ entries were found.",
+        ]
+    lines = [
+        f"- RFQ #{rfq.id}: {rfq.subject} ({rfq.status})"
+        + (f", supplier {rfq.supplier_name}" if rfq.supplier_name else "")
+        for rfq in rfqs[:8]
+    ]
+    intro = "These RFQs are still awaiting response or completion:\n" if awaiting_only else "Here is the RFQ status summary:\n"
+    return intro + "\n".join(lines), [
+        "Read the tender's RFQ list from the database.",
+        "Included supplier and current workflow status.",
+    ]
+
+
+def _summarize_documents(tender: Tender) -> tuple[str, list[str]]:
+    if not tender.documents:
+        return "No documents are linked to this tender yet.", [
+            "Checked the tender's document list.",
+            "No TenderDocument records were found.",
+        ]
+    lines = [
+        f"- {document.original_filename}: {'Processed' if document.processed else 'Pending'}"
+        for document in tender.documents[:8]
+    ]
+    return "These documents are currently attached:\n" + "\n".join(lines), [
+        "Read the tender's uploaded documents.",
+        "Included processed state for each visible document.",
+    ]
+
+
+def _best_price_response(tender: Tender) -> tuple[str, list[str]]:
+    parsed_candidates: list[tuple[str, Decimal]] = []
+    for response in tender.supplier_responses:
+        if not response.parsed_json:
+            continue
+        try:
+            payload = json.loads(response.parsed_json)
+        except json.JSONDecodeError:
+            continue
+        total = Decimal("0.00")
+        for line in payload.get("lines", []):
+            value = line.get("total_price")
+            if value is not None:
+                total += Decimal(str(value))
+        if total > 0:
+            parsed_candidates.append((response.supplier_name or "Unknown supplier", total))
+    if not parsed_candidates:
+        return "I don't have enough parsed supplier pricing yet to compare quotes.", [
+            "Checked supplier responses for parsed pricing JSON.",
+            "No usable totals were available for comparison.",
+        ]
+    supplier_name, total = min(parsed_candidates, key=lambda pair: pair[1])
+    return f"The best parsed supplier total so far is from {supplier_name} at {_currency(total, tender.currency)}.", [
+        "Read parsed supplier response totals from the database.",
+        "Compared the available totals and selected the lowest one.",
+    ]
+
+
+def _suggest_next_actions(tender: Tender) -> tuple[str, list[str]]:
+    missing = _top_missing_areas(tender)
+    if not missing:
+        return "This tender looks well populated. The next step is likely final review and submission prep.", [
+            "Checked documents, items, questions, and RFQs.",
+            "No obvious data gaps were found.",
+        ]
+    return "The main gaps I can see are:\n" + "\n".join(f"- {entry}" for entry in missing[:6]), [
+        "Reviewed the tender's documents, items, RFQs, and questions.",
+        "Summarised the most obvious workflow gaps.",
+    ]
+
+
+def _serialize_page_context(page_context: dict | None) -> str:
+    if not page_context:
+        return "No explicit page context was supplied."
+    lines = [f"- {key}: {value}" for key, value in page_context.items()]
+    return "\n".join(lines)
+
+
+def _serialize_tender_context(tender: Tender | None) -> str:
+    if tender is None:
+        return "No active tender context is available."
+    lines = [
+        f"Tender Number: {tender.tender_number}",
+        f"Customer: {tender.customer_name}",
+        f"Title: {tender.title or '-'}",
+        f"Status: {tender.status}",
+        f"Submission Date: {tender.submission_date.isoformat() if tender.submission_date else '-'}",
+        f"Submission Time: {tender.submission_time or '-'}",
+        f"Award Date: {tender.award_date.isoformat() if tender.award_date else '-'}",
+        f"Currency: {tender.currency}",
+        f"Tender Value: {_currency(tender.tender_value, tender.currency)}",
+        f"Document Count: {len(tender.documents)}",
+        f"Item Count: {len(tender.items)}",
+        f"Question Count: {len(tender.questions)}",
+        f"RFQ Count: {len(tender.rfqs)}",
+        "Top Items:",
+    ]
+    for item in tender.items[:8]:
+        lines.append(
+            f"- {item.description} | qty {item.quantity_required} | status {item.status} | total {_currency(item.total_price, tender.currency)}"
+        )
+    lines.append("Open Questions:")
+    for question in [question for question in tender.questions if question.answer_status != "Answered"][:8]:
+        lines.append(f"- {question.question_number or 'Question'} | {question.answer_status} | {question.question_text[:140]}")
+    lines.append("Documents:")
+    for document in tender.documents[:8]:
+        lines.append(f"- {document.original_filename} | {'Processed' if document.processed else 'Pending'}")
+    return "\n".join(lines)
+
+
+def _general_llm_chat_response(message: str, page_context: dict | None, tender: Tender | None, client, model_name: str) -> tuple[str, list[str]]:
+    prompt = render_prompt(
+        "chat_general_answer",
+        page_context=_serialize_page_context(page_context),
+        tender_context=_serialize_tender_context(tender),
+        user_message=message,
+    )
+    answer = client.generate_text(model_name, prompt)
+    if not answer:
+        raise ValueError("The chat model returned an empty response.")
+    return answer, [
+        f"General chat model: {model_name}",
+        "Used the general chat prompt file with page and tender context.",
+        "Returned an LLM-generated answer because no higher-priority action was triggered.",
+    ]
+
+
+def build_chat_response(
+    message: str,
+    page_context: dict | None,
+    tender: Tender | None,
+    intent_hint: str | None = None,
+    answer_client=None,
+    answer_model_name: str | None = None,
+) -> dict:
+    normalized = _normalize(message)
+
+    if tender is None:
+        latest_upload = ChatUpload.query.order_by(ChatUpload.created_at.desc()).first()
+        if latest_upload and (intent_hint == "create_tender_from_upload" or _heuristic_create_tender_request(normalized)):
+            return {
+                "response_type": "proposed_action",
+                "message": (
+                    f"I can create a new tender from {latest_upload.original_filename}. "
+                    "Reply with 'confirm' and I will create the tender and attach this uploaded document."
+                ),
+                "intermediate_steps": [
+                    "Found a recent chat upload without a tender context.",
+                    "Prepared a create-tender action that will move the uploaded document into a new tender record.",
+                ],
+                "actions": [
+                    {
+                        "action_type": "create_tender_from_upload",
+                        "chat_upload_id": latest_upload.id,
+                        "requires_confirmation": True,
+                    }
+                ],
+            }
+        context_label = page_context.get("page") if page_context else "this screen"
+        if answer_client is not None and answer_model_name:
+            try:
+                message_text, steps = _general_llm_chat_response(message, page_context, tender, answer_client, answer_model_name)
+                return {"response_type": "answer", "message": message_text, "intermediate_steps": steps, "actions": []}
+            except Exception as exc:
+                llm_steps = [f"General chat answer fell back to the simple response: {exc}"]
+            else:
+                llm_steps = []
+        return {
+            "response_type": "answer",
+            "message": (
+                f"I can help with {context_label}. "
+                "If you upload a document here, I can summarise it or prepare a new tender from it."
+            ),
+            "intermediate_steps": [
+                "Used the current page context from the UI.",
+                "No tender ID was available for database-backed analysis.",
+                *llm_steps,
+            ] if 'llm_steps' in locals() else [
+                "Used the current page context from the UI.",
+                "No tender ID was available for database-backed analysis.",
+            ],
+            "actions": [],
+        }
+
+    if any(phrase in normalized for phrase in {"current tender value", "tender value", "current value", "how much is this tender"}):
+        return {
+            "response_type": "answer",
+            "message": f"The current tender value is {_currency(tender.tender_value, tender.currency)}.",
+            "intermediate_steps": [
+                "Used the current tender context supplied by the page.",
+                "Read the latest calculated tender_value from the database.",
+            ],
+            "actions": [],
+        }
+
+    if any(phrase in normalized for phrase in {"what is still missing", "what's still missing", "what is missing", "what's missing", "next steps", "what still needs", "what needs doing"}):
+        message_text, steps = _suggest_next_actions(tender)
+        return {"response_type": "answer", "message": message_text, "intermediate_steps": steps, "actions": []}
+
+    if any(phrase in normalized for phrase in {"summarise the items", "summarize the items", "items we need to price", "show items", "list items", "summarise items", "summarize items"}):
+        message_text, steps = _summarize_items(tender)
+        return {"response_type": "answer", "message": message_text, "intermediate_steps": steps, "actions": []}
+
+    if any(phrase in normalized for phrase in {"which questions are unanswered", "unanswered questions", "open questions", "questions unanswered"}):
+        message_text, steps = _summarize_questions(tender, unanswered_only=True)
+        return {"response_type": "answer", "message": message_text, "intermediate_steps": steps, "actions": []}
+
+    if any(phrase in normalized for phrase in {"show questions", "list questions", "summarise questions", "summarize questions"}):
+        message_text, steps = _summarize_questions(tender, unanswered_only=False)
+        return {"response_type": "answer", "message": message_text, "intermediate_steps": steps, "actions": []}
+
+    if any(phrase in normalized for phrase in {"which rfqs have not had a response", "rfqs have not had a response", "rfqs awaiting response", "show rfqs", "list rfqs"}):
+        awaiting_only = any(phrase in normalized for phrase in {"which rfqs have not had a response", "rfqs have not had a response", "rfqs awaiting response"})
+        message_text, steps = _summarize_rfqs(tender, awaiting_only=awaiting_only)
+        return {"response_type": "answer", "message": message_text, "intermediate_steps": steps, "actions": []}
+
+    if any(phrase in normalized for phrase in {"show documents", "list documents", "uploaded documents", "what documents"}):
+        message_text, steps = _summarize_documents(tender)
+        return {"response_type": "answer", "message": message_text, "intermediate_steps": steps, "actions": []}
+
+    if any(phrase in normalized for phrase in {"best price", "best quote", "lowest quote", "which supplier response gave the best price"}):
+        message_text, steps = _best_price_response(tender)
+        return {"response_type": "answer", "message": message_text, "intermediate_steps": steps, "actions": []}
+
+    if intent_hint == "add_items_from_message" or _heuristic_add_items_request(normalized, message):
+        parsed_items = _parse_item_request_lines(message)
+        if not parsed_items:
+            return {
+                "response_type": "answer",
+                "message": "I could see that you wanted to add items, but I could not parse any `quantity x item` lines from that message yet.",
+                "intermediate_steps": [
+                    "Detected an item-creation style request in the tender chat.",
+                    "Tried to parse lines that start with a quantity followed by `x`.",
+                    "No valid item rows were found to propose.",
+                ],
+                "actions": [],
+            }
+        preview_lines = [
+            f"- {item['quantity_required']} x {item['description']}"
+            for item in parsed_items[:8]
+        ]
+        return {
+            "response_type": "proposed_action",
+            "message": (
+                "I’ve prepared these tender items from your list:\n"
+                + "\n".join(preview_lines)
+                + "\n\nReply with 'confirm' and I will add them to this tender as editable items."
+            ),
+            "intermediate_steps": [
+                "Detected a tender item creation request in the current tender context.",
+                "Parsed lines using the local `quantity x description` item format.",
+                f"Prepared {len(parsed_items)} TenderItem records with full line text stored in the specification summary.",
+            ],
+            "actions": [
+                {
+                    "action_type": "add_items_from_message",
+                    "tender_id": tender.id,
+                    "items": parsed_items,
+                    "requires_confirmation": True,
+                }
+            ],
+        }
+
+    if "status" in normalized:
+        return {
+            "response_type": "answer",
+            "message": (
+                f"Tender {tender.tender_number} for {tender.customer_name} is currently "
+                f"'{tender.status}'. It has {len(tender.documents)} documents, {len(tender.items)} items, "
+                f"{len(tender.rfqs)} RFQs, and {len(tender.questions)} questions."
+            ),
+            "intermediate_steps": [
+                "Used the current tender header record.",
+                "Counted linked documents, items, RFQs, and questions for context.",
+            ],
+            "actions": [],
+        }
+
+    if "change the quantity" in normalized:
+        return {
+            "response_type": "proposed_action",
+            "message": "I can prepare a quantity update once you specify the item ID and new value.",
+            "intermediate_steps": [
+                "Detected a data change request.",
+                "This version still requires a specific record target before proposing the update.",
+            ],
+            "actions": [],
+        }
+
+    if answer_client is not None and answer_model_name:
+        try:
+            message_text, steps = _general_llm_chat_response(message, page_context, tender, answer_client, answer_model_name)
+            return {"response_type": "answer", "message": message_text, "intermediate_steps": steps, "actions": []}
+        except Exception as exc:
+            fallback_steps = [f"General chat answer fell back to the built-in summary: {exc}"]
+    else:
+        fallback_steps = []
+
+    return {
+        "response_type": "answer",
+        "message": (
+            f"I’m using tender {tender.tender_number} for {tender.customer_name}. "
+            "I can answer broader questions from the tender context, or help you trigger actions like creating items or processing documents."
+        ),
+        "intermediate_steps": [
+            "Used the current tender context from the page.",
+            "No specific built-in shortcut matched, so the response fell back to the generic assistant summary.",
+            *fallback_steps,
+        ],
+        "actions": [],
+    }
+
+
+def apply_confirmed_action(action: ChatAction, data_dir: Path) -> str:
+    payload = json.loads(action.payload_json)
+    if action.action_type == "create_tender_from_upload":
+        upload = ChatUpload.query.get(payload.get("chat_upload_id"))
+        if upload is None:
+            raise ValueError("The uploaded chat document could not be found.")
+        filename_stem = Path(upload.original_filename).stem.replace("_", " ").replace("-", " ").strip() or "New Tender"
+        tender = Tender(
+            customer_name="Needs Review",
+            tender_number=f"AUTO-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+            title=filename_stem.title(),
+            status="Documents Uploaded",
+            notes="Created from chat upload. Review metadata and run extraction.",
+        )
+        db.session.add(tender)
+        db.session.flush()
+        tender_dir = ensure_tender_directories(data_dir, tender.id)
+        original_path = Path(upload.file_path)
+        destination = tender_dir / "original_documents" / upload.stored_filename
+        destination.write_bytes(original_path.read_bytes())
+        extracted_path = tender_dir / "extracted_text" / f"{upload.stored_filename}.txt"
+        if upload.extracted_text:
+            extracted_path.write_text(upload.extracted_text, encoding="utf-8")
+        db.session.add(
+            TenderDocument(
+                tender=tender,
+                original_filename=upload.original_filename,
+                stored_filename=upload.stored_filename,
+                file_path=str(destination),
+                file_type=upload.file_type,
+                extracted_text_path=str(extracted_path) if upload.extracted_text else None,
+                extracted_text=upload.extracted_text,
+                processed=bool(upload.extracted_text),
+                processing_notes=upload.processing_notes or "Created from chat upload.",
+            )
+        )
+        action.status = "applied"
+        action.result_json = json.dumps({"tender_id": tender.id, "redirect_path": f"/tenders/{tender.id}?refreshed={int(datetime.utcnow().timestamp())}#top"})
+        return f"Created tender {tender.tender_number} for review and attached {upload.original_filename}."
+    if action.action_type == "add_items_from_message":
+        tender = Tender.query.get(payload.get("tender_id"))
+        if tender is None:
+            raise ValueError("The target tender could not be found.")
+        items = payload.get("items") or []
+        created = 0
+        for item_payload in items:
+            db.session.add(
+                TenderItem(
+                    tender=tender,
+                    description=(item_payload.get("description") or "New item")[:255],
+                    quantity_required=Decimal(str(item_payload.get("quantity_required") or "0")),
+                    status=item_payload.get("status") or "Needs Review",
+                    specification_summary=item_payload.get("specification_summary") or None,
+                    source_reference=item_payload.get("source_reference") or "Added from AI chat request.",
+                )
+            )
+            created += 1
+        action.status = "applied"
+        action.result_json = json.dumps(
+            {
+                "tender_id": tender.id,
+                "redirect_path": f"/tenders/{tender.id}?refreshed={int(datetime.utcnow().timestamp())}#items",
+                "items_created": created,
+            }
+        )
+        return f"Added {created} tender items to {tender.tender_number}. They are ready for review and manual editing."
+    raise ValueError(f"Unsupported action type: {action.action_type}")
+
+
+def classify_message_intent(client, model_name: str, message: str, has_upload: bool, has_tender_context: bool) -> tuple[str | None, list[str]]:
+    normalized = _normalize(message)
+    steps = []
+    if has_upload and not has_tender_context and _heuristic_create_tender_request(normalized):
+        return "create_tender_from_upload", [
+            "Matched the message against the local create-tender fallback rules.",
+            "A recent uploaded file is available and no tender context is active.",
+        ]
+    if has_tender_context and _heuristic_add_items_request(normalized, message):
+        return "add_items_from_message", [
+            "Matched the message against the local add-items fallback rules.",
+            "A tender context is active and item-style lines were found in the message.",
+        ]
+    prompt = render_prompt(
+        "chat_action_orchestrator",
+        user_message=message,
+        has_upload=str(has_upload),
+        has_tender_context=str(has_tender_context),
+    )
+    try:
+        parsed, raw_response, error = client.generate_json(model_name, prompt)
+    except Exception as exc:
+        return None, [f"Intent classification via LLM was unavailable: {exc}"]
+    if parsed is None or error is not None:
+        return None, [f"Intent classification returned invalid JSON: {error or raw_response}"]
+    intent = parsed.get("intent")
+    confidence = (parsed.get("confidence") or "").lower()
+    reason = parsed.get("reason") or "No reason supplied."
+    steps = [
+        f"Intent classifier model: {model_name}",
+        f"Classifier reason: {reason}",
+        f"Classifier confidence: {confidence or 'unknown'}",
+    ]
+    if intent == "create_tender_from_upload" and has_upload and not has_tender_context and confidence in {"high", "medium"}:
+        return intent, steps
+    if intent == "add_items_from_message" and has_tender_context and confidence in {"high", "medium"}:
+        return intent, steps
+    if intent == "confirm_action" and confidence in {"high", "medium"}:
+        return intent, steps
+    return None, steps
+
+
+def log_chat_exchange(db, chat_session: ChatSession, user_message: str, response_payload: dict) -> None:
+    add_chat_message(db, chat_session, "user", user_message)
+    add_chat_message(
+        db,
+        chat_session,
+        "assistant",
+        response_payload.get("message", ""),
+        intermediate_steps=response_payload.get("intermediate_steps", []),
+        actions=response_payload.get("actions", []),
+    )
+    for action in response_payload.get("actions", []):
+        db.session.add(
+            ChatAction(
+                chat_session=chat_session,
+                action_type=action.get("action_type", "unknown"),
+                status="proposed",
+                payload_json=json.dumps(action),
+            )
+        )

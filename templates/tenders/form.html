@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}{{ "Edit" if tender else "Create" }} Tender | Tender Designer{% endblock %}
+{% block content %}
+<section class="hero-card mb-4">
+  <div>
+    <span class="eyebrow">Tender Intake</span>
+    <h1 class="display-title">{{ "Edit" if tender else "Create" }} Tender</h1>
+    <p class="hero-copy mb-0">Capture the bid shell first, then documents, extraction, questions, and supplier pricing can build on top of it.</p>
+  </div>
+</section>
+<form method="post" class="card glass-panel">
+  <div class="card-body row g-3">
+    <div class="col-md-6">
+      <label class="form-label">Customer Name</label>
+      <input class="form-control" name="customer_name" value="{{ tender.customer_name if tender else '' }}" required>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Tender Number</label>
+      <input class="form-control" name="tender_number" value="{{ tender.tender_number if tender else '' }}" required>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Title</label>
+      <input class="form-control" name="title" value="{{ tender.title if tender else '' }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Status</label>
+      <select class="form-select" name="status">
+        {% set selected_status = tender.status if tender else 'New' %}
+        {% for status_option in tender_status_options %}
+        <option value="{{ status_option }}" {% if status_option == selected_status %}selected{% endif %}>{{ status_option }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Currency</label>
+      <input class="form-control" name="currency" value="{{ tender.currency if tender else 'GBP' }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Submission Date</label>
+      <input class="form-control" type="date" name="submission_date" value="{{ tender.submission_date.isoformat() if tender and tender.submission_date else '' }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Submission Time</label>
+      <input class="form-control" name="submission_time" value="{{ tender.submission_time if tender else '' }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Award Date</label>
+      <input class="form-control" type="date" name="award_date" value="{{ tender.award_date.isoformat() if tender and tender.award_date else '' }}">
+    </div>
+    <div class="col-12">
+      <label class="form-label">Notes</label>
+      <textarea class="form-control" name="notes" rows="5">{{ tender.notes if tender else '' }}</textarea>
+    </div>
+  </div>
+  <div class="card-footer d-flex justify-content-between">
+    <a class="btn btn-outline-secondary" href="{{ url_for('tenders.list_tenders') }}">Back</a>
+    <button class="btn btn-primary" type="submit">Save Tender</button>
+  </div>
+</form>
+{% endblock %}

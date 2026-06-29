@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}{{ model.__name__ }} #{{ record.id }}{% endblock %}
+{% block content %}
+<section class="hero-card mb-4">
+  <div>
+    <span class="eyebrow">Record Detail</span>
+    <h1 class="display-title">{{ model.__name__ }} #{{ record.id }}</h1>
+    <p class="hero-copy mb-0">Inspect raw values before correcting them or tracing related workflow records.</p>
+  </div>
+  <div class="hero-actions">
+    <a class="btn btn-outline-dark btn-lg" href="{{ url_for('admin.list_records', model_slug=model_slug) }}">Back</a>
+    <a class="btn btn-primary btn-lg" href="{{ url_for('admin.edit_record', model_slug=model_slug, record_id=record.id) }}">Edit</a>
+  </div>
+</section>
+
+<div class="card glass-panel mb-3">
+  <div class="table-responsive">
+    <table class="table mb-0">
+      <tbody>
+        {% for column in inspector.columns %}
+        <tr>
+          <th class="w-25">{{ column.name }}</th>
+          <td>{{ record|attr(column.name) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<form method="post" action="{{ url_for('admin.delete_record', model_slug=model_slug, record_id=record.id) }}">
+  <button class="btn btn-outline-danger" type="submit">Delete Record</button>
+</form>
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Admin | Tender Designer{% endblock %}
+{% block content %}
+<section class="hero-card mb-4">
+  <div>
+    <span class="eyebrow">Data Repair</span>
+    <h1 class="display-title">Admin workspace</h1>
+    <p class="hero-copy mb-0">Correct extraction mistakes, inspect raw records, and keep every downstream workflow trustworthy.</p>
+  </div>
+</section>
+<div class="row g-3">
+  {% for slug, model in admin_models.items() %}
+  <div class="col-md-4">
+    <div class="card glass-panel h-100">
+      <div class="card-body">
+        <h2 class="h6">{{ model.__name__ }}</h2>
+        <p class="text-muted small mb-3">Browse, edit, and correct extracted records.</p>
+        <a class="btn btn-outline-primary btn-sm" href="{{ url_for('admin.list_records', model_slug=slug) }}">Open Table</a>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

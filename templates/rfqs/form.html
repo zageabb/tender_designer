@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Create RFQ | Tender Designer{% endblock %}
+{% block content %}
+<section class="hero-card mb-4">
+  <div>
+    <span class="eyebrow">Supplier Outreach</span>
+    <h1 class="display-title">Create RFQ</h1>
+    <p class="hero-copy mb-0">Select the lines you want to price and generate a ready-to-send `.eml` draft.</p>
+  </div>
+  <div class="hero-metric">
+    <span class="hero-metric-label">Tender</span>
+    <strong>{{ tender.tender_number }}</strong>
+  </div>
+</section>
+
+<form method="post" class="card glass-panel">
+  <div class="card-body">
+    <div class="row g-3 mb-4">
+      <div class="col-md-6">
+        <label class="form-label">Supplier Name</label>
+        <input class="form-control" name="supplier_name">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Supplier Email</label>
+        <input class="form-control" name="supplier_email">
+      </div>
+    </div>
+
+    <div class="section-heading mb-3">
+      <h2 class="h5 mb-0">Select Items</h2>
+      <span class="text-muted">Choose main items, sub-items, or both.</span>
+    </div>
+
+    {% for item in tender.items %}
+    <div class="selection-card mb-3">
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" name="item_ids" value="{{ item.id }}" id="item-{{ item.id }}">
+        <label class="form-check-label fw-semibold" for="item-{{ item.id }}">
+          {{ item.description }} <span class="text-muted">Qty {{ item.quantity_required }}</span>
+        </label>
+      </div>
+      {% if item.sub_items %}
+      <div class="selection-subitems">
+        {% for sub_item in item.sub_items %}
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="sub_item_ids" value="{{ sub_item.id }}" id="sub-item-{{ sub_item.id }}">
+          <label class="form-check-label" for="sub-item-{{ sub_item.id }}">
+            {{ sub_item.description }} <span class="text-muted">Qty {{ sub_item.quantity }}</span>
+          </label>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% else %}
+    <p class="text-muted mb-0">Add or extract items before creating an RFQ.</p>
+    {% endfor %}
+  </div>
+  <div class="card-footer d-flex justify-content-between">
+    <a class="btn btn-outline-secondary" href="{{ url_for('tenders.detail_tender', tender_id=tender.id) }}">Back to Tender</a>
+    <button class="btn btn-primary" type="submit">Generate RFQ</button>
+  </div>
+</form>
+{% endblock %}
+
