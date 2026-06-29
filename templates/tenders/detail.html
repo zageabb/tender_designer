@@ -110,7 +110,13 @@
             <div class="col-12"><input class="form-control" name="description" placeholder="Add item description"></div>
             <div class="col-md-4"><input class="form-control" name="quantity_required" placeholder="Quantity"></div>
             <div class="col-md-4"><input class="form-control" name="unit_price" placeholder="Unit price"></div>
-            <div class="col-md-4"><input class="form-control" name="status" value="New"></div>
+            <div class="col-md-4">
+              <select class="form-select" name="status">
+                {% for status in item_status_options %}
+                <option value="{{ status }}" {% if status == "New" %}selected{% endif %}>{{ status }}</option>
+                {% endfor %}
+              </select>
+            </div>
             <div class="col-12"><textarea class="form-control" name="specification_summary" rows="2" placeholder="Specification summary"></textarea></div>
             <div class="col-12"><button class="btn btn-primary" type="submit">Add Item</button></div>
           </div>

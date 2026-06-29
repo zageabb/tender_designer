@@ -25,7 +25,11 @@
     </div>
     <div class="col-md-4">
       <label class="form-label">Status</label>
-      <input class="form-control" name="status" value="{{ item.status }}">
+      <select class="form-select" name="status">
+        {% for status in item_status_options %}
+        <option value="{{ status }}" {% if item.status == status %}selected{% endif %}>{{ status }}</option>
+        {% endfor %}
+      </select>
     </div>
     <div class="col-12">
       <label class="form-label">Specification Summary</label>

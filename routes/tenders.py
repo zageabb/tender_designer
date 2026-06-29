@@ -35,6 +35,18 @@ TENDER_STATUS_OPTIONS = [
     "Cancelled",
 ]
 
+ITEM_STATUS_OPTIONS = [
+    "New",
+    "Needs Review",
+    "RFQ Required",
+    "Quoted",
+    "Ready To Order",
+    "Ordered",
+    "Complete",
+    "On Hold",
+    "Cancelled",
+]
+
 
 def _detail_redirect(tender_id: int, anchor: str | None = None):
     return redirect(
@@ -126,6 +138,7 @@ def detail_tender(tender_id: int):
         tender=tender,
         extraction_runs=extraction_runs,
         extraction_jobs=extraction_jobs,
+        item_status_options=ITEM_STATUS_OPTIONS,
         chat_context=chat_context,
     )
 
@@ -225,6 +238,7 @@ def edit_item(item_id: int):
     return render_template(
         "tenders/item_form.html",
         item=item,
+        item_status_options=ITEM_STATUS_OPTIONS,
         chat_context={
             "page": "tender_item_edit",
             "tender_id": item.tender_id,
