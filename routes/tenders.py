@@ -47,6 +47,17 @@ def _detail_redirect(tender_id: int, anchor: str | None = None):
     )
 
 
+def _item_redirect(item_id: int, anchor: str | None = None):
+    return redirect(
+        url_for(
+            "tenders.edit_item",
+            item_id=item_id,
+            refreshed=int(time.time()),
+            _anchor=anchor,
+        )
+    )
+
+
 @tenders_bp.route("/")
 def list_tenders():
     tenders = (
@@ -237,17 +248,39 @@ def add_sub_item(item_id: int):
     db.session.add(sub_item)
     db.session.commit()
     flash("Sub-item added.", "success")
+    if request.form.get("return_to") == "item_edit":
+        return _item_redirect(item.id, anchor="sub-items")
     return _detail_redirect(item.tender_id, anchor="items")
+
+
+@tenders_bp.route("/sub-items/<int:sub_item_id>/edit", methods=["POST"])
+def edit_sub_item(sub_item_id: int):
+    sub_item = TenderSubItem.query.get_or_404(sub_item_id)
+    sub_item.description = request.form.get("description", "").strip() or sub_item.description
+    sub_item.quantity = _decimal_value(request.form.get("quantity", str(sub_item.quantity or 0)))
+    sub_item.unit_price = _decimal_value(request.form.get("unit_price", "0")) if request.form.get("unit_price", "").strip() else None
+    sub_item.status = request.form.get("status", sub_item.status).strip() or sub_item.status
+    sub_item.supplier_name = request.form.get("supplier_name", "").strip() or None
+    sub_item.supplier_reference = request.form.get("supplier_reference", "").strip() or None
+    sub_item.notes = request.form.get("notes", "").strip() or None
+    db.session.commit()
+    flash("Sub-item updated.", "success")
+    if request.form.get("return_to") == "item_edit":
+        return _item_redirect(sub_item.tender_item_id, anchor="sub-items")
+    return _detail_redirect(sub_item.tender_item.tender_id, anchor="items")
 
 
 @tenders_bp.route("/sub-items/<int:sub_item_id>/delete", methods=["POST"])
 def delete_sub_item(sub_item_id: int):
     sub_item = TenderSubItem.query.get_or_404(sub_item_id)
     tender_id = sub_item.tender_item.tender_id
+    item_id = sub_item.tender_item_id
     description = sub_item.description
     db.session.delete(sub_item)
     db.session.commit()
     flash(f"Deleted sub-item: {description}.", "success")
+    if request.form.get("return_to") == "item_edit":
+        return _item_redirect(item_id, anchor="sub-items")
     return _detail_redirect(tender_id, anchor="items")
 
 

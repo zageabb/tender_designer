@@ -41,4 +41,108 @@
     <button class="btn btn-primary" type="submit">Save Item</button>
   </div>
 </form>
+
+<section class="hero-card mt-4 mb-4" id="sub-items">
+  <div>
+    <span class="eyebrow">Sub-items</span>
+    <h2 class="display-title h3 mb-1">Manage Linked Sub-items</h2>
+    <p class="hero-copy mb-0">Create, edit, and delete the supplier-level or option-level breakdown directly underneath the parent item.</p>
+  </div>
+</section>
+
+<div class="card glass-panel mb-4">
+  <div class="card-header">Add Sub-item</div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('tenders.add_sub_item', item_id=item.id) }}" class="inline-editor">
+      <input type="hidden" name="return_to" value="item_edit">
+      <div class="row g-3">
+        <div class="col-12">
+          <label class="form-label">Description</label>
+          <input class="form-control" name="description" placeholder="New sub-item">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Quantity</label>
+          <input class="form-control" name="quantity" placeholder="0">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Unit Price</label>
+          <input class="form-control" name="unit_price" placeholder="0.00">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Status</label>
+          <input class="form-control" name="status" value="New">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Supplier</label>
+          <input class="form-control" name="supplier_name" placeholder="Optional">
+        </div>
+        <div class="col-12">
+          <label class="form-label">Notes</label>
+          <textarea class="form-control" name="notes" rows="2" placeholder="Optional notes"></textarea>
+        </div>
+        <div class="col-12">
+          <button class="btn btn-primary" type="submit">Add Sub-item</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card glass-panel">
+  <div class="card-header">Existing Sub-items</div>
+  <div class="card-body">
+    {% for sub_item in item.sub_items %}
+    <div class="record-card mb-3">
+      <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+        <div>
+          <strong>Sub-item #{{ sub_item.id }}</strong>
+          <div class="small text-muted">Current total {{ item.tender.currency if item.tender else 'GBP' }} {{ sub_item.total_price or 0 }}</div>
+        </div>
+        <form method="post" action="{{ url_for('tenders.delete_sub_item', sub_item_id=sub_item.id) }}" onsubmit="return confirm('Delete sub-item {{ sub_item.description }}?');">
+          <input type="hidden" name="return_to" value="item_edit">
+          <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+        </form>
+      </div>
+      <form method="post" action="{{ url_for('tenders.edit_sub_item', sub_item_id=sub_item.id) }}">
+        <input type="hidden" name="return_to" value="item_edit">
+        <div class="row g-3">
+          <div class="col-12">
+            <label class="form-label">Description</label>
+            <input class="form-control" name="description" value="{{ sub_item.description }}">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Quantity</label>
+            <input class="form-control" name="quantity" value="{{ sub_item.quantity }}">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Unit Price</label>
+            <input class="form-control" name="unit_price" value="{{ sub_item.unit_price or '' }}">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Status</label>
+            <input class="form-control" name="status" value="{{ sub_item.status }}">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Supplier Name</label>
+            <input class="form-control" name="supplier_name" value="{{ sub_item.supplier_name or '' }}">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Supplier Reference</label>
+            <input class="form-control" name="supplier_reference" value="{{ sub_item.supplier_reference or '' }}">
+          </div>
+          <div class="col-12">
+            <label class="form-label">Notes</label>
+            <textarea class="form-control" name="notes" rows="3">{{ sub_item.notes or '' }}</textarea>
+          </div>
+          <div class="col-12">
+            <button class="btn btn-sm btn-primary" type="submit">Save Sub-item</button>
+          </div>
+        </div>
+      </form>
+    </div>
+    {% else %}
+    <p class="text-muted mb-0">No sub-items are linked to this tender item yet.</p>
+    {% endfor %}
+  </div>
+</div>
 {% endblock %}
