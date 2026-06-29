@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request
+from werkzeug.utils import secure_filename
 
 from database import db
 from models import ChatAction, ChatSession, ChatUpload, Tender, TenderDocument
@@ -166,19 +167,45 @@ def upload():
         return jsonify({"ok": False, "message": "A file is required."}), 400
     if tender_id is not None:
         tender = Tender.query.get_or_404(tender_id)
-        original_name, stored_name, saved_path = save_tender_upload(current_app.config["DATA_DIR"], tender.id, upload)
-        text, error = extract_text(saved_path)
-        document = TenderDocument(
-            tender=tender,
+        original_name = secure_filename(upload.filename or "upload")
+        existing_document = TenderDocument.query.filter_by(
+            tender_id=tender.id,
             original_filename=original_name,
-            stored_filename=stored_name,
-            file_path=str(saved_path),
-            file_type=Path(original_name).suffix.lower().lstrip("."),
-            extracted_text=text or None,
-            processed=bool(text),
-            processing_notes=error or "Uploaded via chat panel.",
+        ).first()
+        stored_name_hint = existing_document.stored_filename if existing_document else None
+        original_name, stored_name, saved_path = save_tender_upload(
+            current_app.config["DATA_DIR"],
+            tender.id,
+            upload,
+            stored_name=stored_name_hint,
         )
-        db.session.add(document)
+        text, error = extract_text(saved_path)
+        if existing_document is not None:
+            if existing_document.extracted_text_path and os.path.exists(existing_document.extracted_text_path):
+                try:
+                    os.remove(existing_document.extracted_text_path)
+                except OSError:
+                    pass
+            document = existing_document
+            document.stored_filename = stored_name
+            document.file_path = str(saved_path)
+            document.file_type = Path(original_name).suffix.lower().lstrip(".")
+            document.extracted_text = text or None
+            document.extracted_text_path = None
+            document.processed = bool(text)
+            document.processing_notes = error or "Uploaded via chat panel."
+        else:
+            document = TenderDocument(
+                tender=tender,
+                original_filename=original_name,
+                stored_filename=stored_name,
+                file_path=str(saved_path),
+                file_type=Path(original_name).suffix.lower().lstrip("."),
+                extracted_text=text or None,
+                processed=bool(text),
+                processing_notes=error or "Uploaded via chat panel.",
+            )
+            db.session.add(document)
         db.session.commit()
         if text:
             message = (

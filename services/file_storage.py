@@ -23,11 +23,16 @@ def ensure_tender_directories(base_data_dir: Path, tender_id: int) -> Path:
     return tender_dir
 
 
-def save_tender_upload(base_data_dir: Path, tender_id: int, upload: FileStorage) -> tuple[str, str, Path]:
+def save_tender_upload(
+    base_data_dir: Path,
+    tender_id: int,
+    upload: FileStorage,
+    stored_name: str | None = None,
+) -> tuple[str, str, Path]:
     tender_dir = ensure_tender_directories(base_data_dir, tender_id)
     original_name = secure_filename(upload.filename or "upload")
     extension = Path(original_name).suffix.lower()
-    stored_name = f"{uuid.uuid4().hex}{extension}"
+    stored_name = stored_name or f"{uuid.uuid4().hex}{extension}"
     destination = tender_dir / "original_documents" / stored_name
     upload.save(destination)
     return original_name, stored_name, destination

@@ -7,8 +7,9 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, send_file, url_for
 from sqlalchemy.exc import SQLAlchemyError
+from werkzeug.utils import secure_filename
 
 from database import db
 from models import ExtractionJob, LLMRunLog, Tender, TenderDocument, TenderItem, TenderQuestion, TenderSubItem, recalculate_tender_totals
@@ -372,16 +373,41 @@ def upload_document(tender_id: int):
         if extension not in current_app.config["ALLOWED_UPLOAD_EXTENSIONS"]:
             flash(f"Skipped unsupported file: {upload.filename}", "warning")
             continue
-        original_name, stored_name, saved_path = save_tender_upload(current_app.config["DATA_DIR"], tender.id, upload)
-        db.session.add(
-            TenderDocument(
-                tender=tender,
-                original_filename=original_name,
-                stored_filename=stored_name,
-                file_path=str(saved_path),
-                file_type=extension.lstrip("."),
-            )
+        original_name = secure_filename(upload.filename or "upload")
+        existing_document = TenderDocument.query.filter_by(
+            tender_id=tender.id,
+            original_filename=original_name,
+        ).first()
+        stored_name_hint = existing_document.stored_filename if existing_document else None
+        original_name, stored_name, saved_path = save_tender_upload(
+            current_app.config["DATA_DIR"],
+            tender.id,
+            upload,
+            stored_name=stored_name_hint,
         )
+        if existing_document is not None:
+            if existing_document.extracted_text_path and os.path.exists(existing_document.extracted_text_path):
+                try:
+                    os.remove(existing_document.extracted_text_path)
+                except OSError:
+                    pass
+            existing_document.stored_filename = stored_name
+            existing_document.file_path = str(saved_path)
+            existing_document.file_type = extension.lstrip(".")
+            existing_document.extracted_text_path = None
+            existing_document.extracted_text = None
+            existing_document.processed = False
+            existing_document.processing_notes = "Re-uploaded and awaiting processing."
+        else:
+            db.session.add(
+                TenderDocument(
+                    tender=tender,
+                    original_filename=original_name,
+                    stored_filename=stored_name,
+                    file_path=str(saved_path),
+                    file_type=extension.lstrip("."),
+                )
+            )
     tender.status = "Documents Uploaded"
     db.session.commit()
     flash("Document upload complete.", "success")
@@ -438,6 +464,16 @@ def view_document_text(document_id: int):
             "tender_id": document.tender_id,
         },
     )
+
+
+@tenders_bp.route("/documents/<int:document_id>/download")
+def download_document(document_id: int):
+    document = TenderDocument.query.get_or_404(document_id)
+    path = Path(document.file_path or "")
+    if not path.exists():
+        flash("The uploaded document file is missing.", "danger")
+        return _detail_redirect(document.tender_id, anchor="documents")
+    return send_file(path, as_attachment=True, download_name=document.original_filename)
 
 
 @tenders_bp.route("/<int:tender_id>/extract/<string:task_name>", methods=["POST"])
