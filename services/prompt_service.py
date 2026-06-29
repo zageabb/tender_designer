@@ -83,6 +83,28 @@ PROMPT_FILES = {
             "User question:\n{{user_message}}\n"
         ),
     },
+    "rfq_email_body": {
+        "filename": "rfq_email_body.md",
+        "title": "RFQ Email Body Template",
+        "description": "Template file used to build the RFQ email body from tender and supplier context.",
+        "default_content": (
+            "# RFQ Email Body Template\n\n"
+            "Dear {{supplier_display_name}},\n\n"
+            "We are currently preparing a tender response for {{tender_reference}} and would like to request pricing and availability "
+            "for the lines below.\n\n"
+            "Customer: {{customer_name}}\n"
+            "Tender status: {{tender_status}}\n"
+            "Submission date: {{submission_date}}\n\n"
+            "Please provide:\n"
+            "- Unit pricing\n"
+            "- Lead time\n"
+            "- Warranty details\n"
+            "- Any assumptions or exclusions\n"
+            "- Product references or datasheets where applicable\n\n"
+            "Items:\n{{line_items_table}}\n\n"
+            "{{email_signature}}\n"
+        ),
+    },
 }
 
 

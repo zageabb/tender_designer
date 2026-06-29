@@ -40,20 +40,6 @@ DEFAULT_SETTINGS = {
         "value": "nomic-embed-text",
         "description": "Embedding model used for future RAG indexing.",
     },
-    "default_rfq_intro": {
-        "value": (
-            "Dear Supplier,\n\n"
-            "We are currently preparing a tender response and would like to request pricing and "
-            "availability for the items listed below.\n\n"
-            "Please provide:\n"
-            "- Unit pricing\n"
-            "- Lead time\n"
-            "- Warranty details\n"
-            "- Any assumptions or exclusions\n"
-            "- Product references or datasheets where applicable\n"
-        ),
-        "description": "Default introduction text for RFQ emails.",
-    },
     "default_email_signature": {
         "value": "Kind regards,\nTender Designer Team",
         "description": "Default signature appended to RFQ email bodies.",

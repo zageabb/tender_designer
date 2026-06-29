@@ -5,27 +5,54 @@ from pathlib import Path
 
 from models import RFQ, RFQLine, Tender, TenderItem, TenderSubItem
 from services.file_storage import ensure_tender_directories
+from services.prompt_service import render_prompt
 from services.settings_service import get_setting
 
 
 def _format_item_rows(lines: list[dict]) -> str:
-    formatted = ["Qty | Description", "--- | ---"]
+    formatted = ["Qty | General Item | Specification / Sub-item", "--- | --- | ---"]
     for line in lines:
-        formatted.append(f"{line['quantity']} | {line['description']}")
+        formatted.append(
+            f"{line['quantity']} | {line['parent_description']} | {line['description']}"
+        )
     return "\n".join(formatted)
 
 
+def _format_optional_date(value) -> str:
+    return value.isoformat() if value else "Not set"
+
+
+def _clean_rfq_body(text: str) -> str:
+    lines = text.splitlines()
+    if lines and lines[0].startswith("# "):
+        lines = lines[1:]
+    while lines and not lines[0].strip():
+        lines = lines[1:]
+    return "\n".join(lines).strip()
+
+
 def build_rfq_email_text(tender: Tender, supplier_name: str, lines: list[dict]) -> tuple[str, str]:
-    intro = get_setting("default_rfq_intro", "") or ""
     signature = get_setting("default_email_signature", "") or ""
     subject = f"RFQ - {tender.tender_number} - {tender.customer_name}"
-    body = (
-        f"{intro}\n\n"
-        f"Items:\n{_format_item_rows(lines)}\n\n"
-        f"{signature}"
-    ).strip()
-    if supplier_name:
-        body = body.replace("Dear Supplier,", f"Dear {supplier_name},", 1)
+    tender_reference = tender.tender_number
+    if tender.title:
+        tender_reference = f"{tender_reference} - {tender.title}"
+    body = render_prompt(
+        "rfq_email_body",
+        supplier_display_name=supplier_name or "Supplier",
+        supplier_name=supplier_name or "",
+        customer_name=tender.customer_name or "",
+        tender_number=tender.tender_number or "",
+        tender_title=tender.title or "",
+        tender_reference=tender_reference,
+        tender_status=tender.status or "",
+        submission_date=_format_optional_date(tender.submission_date),
+        award_date=_format_optional_date(tender.award_date),
+        tender_currency=tender.currency or "",
+        line_items_table=_format_item_rows(lines),
+        email_signature=signature,
+    )
+    body = _clean_rfq_body(body)
     return subject, body
 
 
@@ -53,7 +80,8 @@ def create_rfq_for_selection(
         else:
             lines.append(
                 {
-                    "description": item.description,
+                    "parent_description": item.description,
+                    "description": item.specification_summary or item.description,
                     "quantity": item.quantity_required,
                     "tender_item_id": item.id,
                     "tender_sub_item_id": None,
@@ -70,6 +98,7 @@ def create_rfq_for_selection(
         seen_sub_item_ids.add(sub_item.id)
         lines.append(
             {
+                "parent_description": sub_item.tender_item.description if sub_item.tender_item else sub_item.description,
                 "description": sub_item.description,
                 "quantity": sub_item.quantity,
                 "tender_item_id": sub_item.tender_item_id,
@@ -125,4 +154,3 @@ def tender_sub_items_for_ids(tender: Tender, selected_sub_item_ids: list[int]) -
         for sub_item in item.sub_items
         if sub_item.id in selected
     ]
-
