@@ -61,6 +61,9 @@
             <div class="d-flex gap-2 flex-wrap">
               <a class="btn btn-sm btn-outline-primary" href="{{ url_for('rfqs.view_rfq', rfq_id=rfq.id) }}">Open RFQ</a>
               <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('rfqs.download_rfq', rfq_id=rfq.id) }}">Download .eml</a>
+              <form method="post" action="{{ url_for('rfqs.delete_rfq', rfq_id=rfq.id) }}" onsubmit="return confirm('Delete RFQ {{ rfq.subject }}? This will remove the RFQ draft and its generated email file.');">
+                <button class="btn btn-sm btn-outline-danger" type="submit">Delete RFQ</button>
+              </form>
             </div>
           </td>
         </tr>

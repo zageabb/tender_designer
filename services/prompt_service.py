@@ -105,6 +105,26 @@ PROMPT_FILES = {
             "{{email_signature}}\n"
         ),
     },
+    "rfq_line_items_table": {
+        "filename": "rfq_line_items_table.md",
+        "title": "RFQ Line Items Table Template",
+        "description": "Template file used to wrap the rendered RFQ line rows into the final inserted table block.",
+        "default_content": (
+            "# RFQ Line Items Table Template\n\n"
+            "| Qty | General Item | Specification / Sub-item |\n"
+            "| --- | --- | --- |\n"
+            "{{line_items_rows}}\n"
+        ),
+    },
+    "rfq_line_item_row": {
+        "filename": "rfq_line_item_row.md",
+        "title": "RFQ Line Item Row Template",
+        "description": "Template file used to render each individual RFQ line row with item and sub-item fields.",
+        "default_content": (
+            "# RFQ Line Item Row Template\n\n"
+            "| {{line_quantity}} | {{item_description}} | {{line_description}} |\n"
+        ),
+    },
 }
 
 
@@ -132,6 +152,10 @@ def save_prompt_content(prompt_key: str, content: str) -> None:
 
 def render_prompt(prompt_key: str, **kwargs: str) -> str:
     content = get_prompt_content(prompt_key)
+    return render_template_text(content, **kwargs)
+
+
+def render_template_text(content: str, **kwargs: str) -> str:
     rendered = content
     for key, value in kwargs.items():
         rendered = rendered.replace(f"{{{{{key}}}}}", str(value))

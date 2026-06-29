@@ -105,18 +105,64 @@ Source:
 - `line_items_table`: generated markdown-style table of the selected RFQ lines
 - `email_signature`: value from the Default Email Signature setting
 
-## `{{line_items_table}}` Format
+### `rfq_line_items_table.md`
 
-The RFQ line table currently renders with these columns:
+Supported placeholders:
 
-- `Qty`
-- `General Item`
-- `Specification / Sub-item`
+- `{{line_items_rows}}`
+
+Source:
+
+- `line_items_rows`: the fully rendered collection of row blocks from `rfq_line_item_row.md`
+
+### `rfq_line_item_row.md`
+
+Supported placeholders:
+
+- `{{line_quantity}}`
+- `{{line_description}}`
+- `{{line_status}}`
+- `{{line_currency}}`
+- `{{item_id}}`
+- `{{item_tender_id}}`
+- `{{item_description}}`
+- `{{item_quantity_required}}`
+- `{{item_unit_price}}`
+- `{{item_total_price}}`
+- `{{item_status}}`
+- `{{item_specification_summary}}`
+- `{{item_source_reference}}`
+- `{{item_created_at}}`
+- `{{item_updated_at}}`
+- `{{sub_item_id}}`
+- `{{sub_item_tender_item_id}}`
+- `{{sub_item_description}}`
+- `{{sub_item_quantity}}`
+- `{{sub_item_unit_price}}`
+- `{{sub_item_total_price}}`
+- `{{sub_item_supplier_name}}`
+- `{{sub_item_supplier_reference}}`
+- `{{sub_item_status}}`
+- `{{sub_item_notes}}`
+- `{{sub_item_created_at}}`
+- `{{sub_item_updated_at}}`
+
+Source:
+
+- `line_quantity`: quantity used for the RFQ line
+- `line_description`: resolved specification text used for the RFQ line
+- `line_status`: resolved status used for the RFQ line
+- `line_currency`: tender currency for the line
+- `item_*`: direct fields from the linked tender item
+- `sub_item_*`: direct fields from the linked tender sub-item, blank when the row comes from a main item without a sub-item
+
+## `{{line_items_table}}` Generation
 
 Behavior:
 
-- If a sub-item is selected, `General Item` comes from the parent tender item description and `Specification / Sub-item` comes from the sub-item description.
-- If a main item without sub-items is selected, `General Item` comes from the item description and `Specification / Sub-item` comes from the item specification summary when available.
+- `{{line_items_table}}` is rendered by first expanding `rfq_line_item_row.md` for each selected RFQ line, then inserting the combined result into `rfq_line_items_table.md`.
+- If a sub-item is selected, `line_description` comes from the parent item's `specification_summary` when available, falling back to the sub-item description.
+- If a main item without sub-items is selected, `line_description` comes from the item specification summary when available, otherwise the item description.
 
 ## Where These Are Used In Code
 

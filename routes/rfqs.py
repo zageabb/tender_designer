@@ -72,3 +72,16 @@ def download_rfq(rfq_id: int):
         return redirect(url_for("rfqs.view_rfq", rfq_id=rfq.id))
     return send_file(path, as_attachment=True, download_name=path.name, mimetype="message/rfc822")
 
+
+@rfqs_bp.route("/<int:rfq_id>/delete", methods=["POST"])
+def delete_rfq(rfq_id: int):
+    rfq = RFQ.query.get_or_404(rfq_id)
+    tender_id = rfq.tender_id
+    subject = rfq.subject
+    eml_path = Path(rfq.eml_file_path) if rfq.eml_file_path else None
+    db.session.delete(rfq)
+    db.session.commit()
+    if eml_path and eml_path.exists():
+        eml_path.unlink()
+    flash(f"Deleted RFQ: {subject}.", "success")
+    return redirect(url_for("tenders.detail_tender", tender_id=tender_id))

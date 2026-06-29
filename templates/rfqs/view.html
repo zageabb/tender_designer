@@ -10,6 +10,9 @@
   <div class="d-flex gap-2">
     <a class="btn btn-outline-dark btn-lg" href="{{ url_for('tenders.detail_tender', tender_id=rfq.tender_id) }}">Back to Tender</a>
     <a class="btn btn-primary btn-lg" href="{{ url_for('rfqs.download_rfq', rfq_id=rfq.id) }}">Download .eml</a>
+    <form method="post" action="{{ url_for('rfqs.delete_rfq', rfq_id=rfq.id) }}" onsubmit="return confirm('Delete RFQ {{ rfq.subject }}? This will remove the RFQ draft and its generated email file.');">
+      <button class="btn btn-outline-danger btn-lg" type="submit">Delete RFQ</button>
+    </form>
   </div>
 </section>
 

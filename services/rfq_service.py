@@ -5,30 +5,127 @@ from pathlib import Path
 
 from models import RFQ, RFQLine, Tender, TenderItem, TenderSubItem
 from services.file_storage import ensure_tender_directories
-from services.prompt_service import render_prompt
+from services.prompt_service import render_prompt, render_template_text
 from services.settings_service import get_setting
 
 
-def _format_item_rows(lines: list[dict]) -> str:
-    formatted = ["Qty | General Item | Specification / Sub-item", "--- | --- | ---"]
-    for line in lines:
-        formatted.append(
-            f"{line['quantity']} | {line['parent_description']} | {line['description']}"
-        )
-    return "\n".join(formatted)
-
-
-def _format_optional_date(value) -> str:
-    return value.isoformat() if value else "Not set"
-
-
-def _clean_rfq_body(text: str) -> str:
+def _clean_rendered_block(text: str) -> str:
     lines = text.splitlines()
     if lines and lines[0].startswith("# "):
         lines = lines[1:]
     while lines and not lines[0].strip():
         lines = lines[1:]
     return "\n".join(lines).strip()
+
+
+def _format_optional_date(value) -> str:
+    return value.isoformat() if value else "Not set"
+
+
+def _format_value(value) -> str:
+    if value is None:
+        return ""
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
+def _line_template_context(item: TenderItem | None, sub_item: TenderSubItem | None) -> dict[str, str]:
+    line_quantity = sub_item.quantity if sub_item is not None else (item.quantity_required if item is not None else "")
+    line_description = ""
+    if sub_item is not None:
+        line_description = item.specification_summary if item is not None and item.specification_summary else sub_item.description
+    elif item is not None:
+        line_description = item.specification_summary or item.description
+    context = {
+        "line_quantity": _format_value(line_quantity),
+        "line_description": _format_value(line_description),
+        "line_status": _format_value(sub_item.status if sub_item is not None else (item.status if item is not None else "")),
+        "line_currency": _format_value(item.tender.currency if item is not None and item.tender is not None else ""),
+    }
+    if item is not None:
+        context.update(
+            {
+                "item_id": _format_value(item.id),
+                "item_tender_id": _format_value(item.tender_id),
+                "item_description": _format_value(item.description),
+                "item_quantity_required": _format_value(item.quantity_required),
+                "item_unit_price": _format_value(item.unit_price),
+                "item_total_price": _format_value(item.total_price),
+                "item_status": _format_value(item.status),
+                "item_specification_summary": _format_value(item.specification_summary),
+                "item_source_reference": _format_value(item.source_reference),
+                "item_created_at": _format_value(item.created_at),
+                "item_updated_at": _format_value(item.updated_at),
+            }
+        )
+    else:
+        context.update(
+            {
+                "item_id": "",
+                "item_tender_id": "",
+                "item_description": "",
+                "item_quantity_required": "",
+                "item_unit_price": "",
+                "item_total_price": "",
+                "item_status": "",
+                "item_specification_summary": "",
+                "item_source_reference": "",
+                "item_created_at": "",
+                "item_updated_at": "",
+            }
+        )
+    if sub_item is not None:
+        context.update(
+            {
+                "sub_item_id": _format_value(sub_item.id),
+                "sub_item_tender_item_id": _format_value(sub_item.tender_item_id),
+                "sub_item_description": _format_value(sub_item.description),
+                "sub_item_quantity": _format_value(sub_item.quantity),
+                "sub_item_unit_price": _format_value(sub_item.unit_price),
+                "sub_item_total_price": _format_value(sub_item.total_price),
+                "sub_item_supplier_name": _format_value(sub_item.supplier_name),
+                "sub_item_supplier_reference": _format_value(sub_item.supplier_reference),
+                "sub_item_status": _format_value(sub_item.status),
+                "sub_item_notes": _format_value(sub_item.notes),
+                "sub_item_created_at": _format_value(sub_item.created_at),
+                "sub_item_updated_at": _format_value(sub_item.updated_at),
+            }
+        )
+    else:
+        context.update(
+            {
+                "sub_item_id": "",
+                "sub_item_tender_item_id": "",
+                "sub_item_description": "",
+                "sub_item_quantity": "",
+                "sub_item_unit_price": "",
+                "sub_item_total_price": "",
+                "sub_item_supplier_name": "",
+                "sub_item_supplier_reference": "",
+                "sub_item_status": "",
+                "sub_item_notes": "",
+                "sub_item_created_at": "",
+                "sub_item_updated_at": "",
+            }
+        )
+    return context
+
+
+def _render_line_items_table(lines: list[dict]) -> str:
+    row_template = render_prompt("rfq_line_item_row")
+    rows = []
+    for line in lines:
+        rows.append(
+            _clean_rendered_block(
+                render_template_text(row_template, **line["template_context"])
+            )
+        )
+    table_block = render_prompt(
+        "rfq_line_items_table",
+        line_items_rows="\n".join(filter(None, rows)),
+    )
+    return _clean_rendered_block(table_block)
 
 
 def build_rfq_email_text(tender: Tender, supplier_name: str, lines: list[dict]) -> tuple[str, str]:
@@ -49,10 +146,10 @@ def build_rfq_email_text(tender: Tender, supplier_name: str, lines: list[dict]) 
         submission_date=_format_optional_date(tender.submission_date),
         award_date=_format_optional_date(tender.award_date),
         tender_currency=tender.currency or "",
-        line_items_table=_format_item_rows(lines),
+        line_items_table=_render_line_items_table(lines),
         email_signature=signature,
     )
-    body = _clean_rfq_body(body)
+    body = _clean_rendered_block(body)
     return subject, body
 
 
@@ -80,11 +177,11 @@ def create_rfq_for_selection(
         else:
             lines.append(
                 {
-                    "parent_description": item.description,
                     "description": item.specification_summary or item.description,
                     "quantity": item.quantity_required,
                     "tender_item_id": item.id,
                     "tender_sub_item_id": None,
+                    "template_context": _line_template_context(item, None),
                 }
             )
 
@@ -98,11 +195,15 @@ def create_rfq_for_selection(
         seen_sub_item_ids.add(sub_item.id)
         lines.append(
             {
-                "parent_description": sub_item.tender_item.description if sub_item.tender_item else sub_item.description,
-                "description": sub_item.description,
+                "description": (
+                    sub_item.tender_item.specification_summary
+                    if sub_item.tender_item and sub_item.tender_item.specification_summary
+                    else sub_item.description
+                ),
                 "quantity": sub_item.quantity,
                 "tender_item_id": sub_item.tender_item_id,
                 "tender_sub_item_id": sub_item.id,
+                "template_context": _line_template_context(sub_item.tender_item, sub_item),
             }
         )
 
