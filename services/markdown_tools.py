@@ -78,7 +78,8 @@ def render_markdown_html(text: str | None) -> Markup:
         nonlocal in_code_block, code_lines
         if not in_code_block:
             return
-        html.append(f"<pre><code>{escape('\n'.join(code_lines))}</code></pre>")
+        code_block = "\n".join(code_lines)
+        html.append(f"<pre><code>{escape(code_block)}</code></pre>")
         in_code_block = False
         code_lines = []
 
