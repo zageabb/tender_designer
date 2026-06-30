@@ -12,6 +12,8 @@ from models import ChatAction, ChatMessage, ChatSession, ChatUpload, Tender, Ten
 from services.file_storage import ensure_tender_directories
 from services.prompt_service import render_prompt
 
+MAX_CHAT_DOCUMENT_CONTEXT_CHARS = 20000
+
 
 ALLOWED_UPDATE_FIELDS = {
     "Tender": {"customer_name", "title", "status", "submission_time", "currency", "notes"},
@@ -330,11 +332,54 @@ def _serialize_tender_context(tender: Tender | None) -> str:
     return "\n".join(lines)
 
 
+def _serialize_document_text_context(
+    tender: Tender | None,
+    selected_document_ids: list[int] | None = None,
+    limit: int = MAX_CHAT_DOCUMENT_CONTEXT_CHARS,
+) -> str:
+    if tender is None:
+        return "No active tender document text is available."
+    if not selected_document_ids:
+        return "No tender documents were selected for chat context."
+    selected_ids = {int(document_id) for document_id in selected_document_ids}
+    sections: list[str] = []
+    total_length = 0
+    processed_count = 0
+    for document in tender.documents:
+        if document.id not in selected_ids:
+            continue
+        text = (document.extracted_text or "").strip()
+        if not text:
+            continue
+        processed_count += 1
+        section = f"Document: {document.original_filename}\n{text}"
+        remaining = limit - total_length
+        if remaining <= 0:
+            break
+        if len(section) > remaining:
+            section = section[:remaining].rstrip() + "\n[Document text truncated]"
+        sections.append(section)
+        total_length += len(section) + 2
+        if total_length >= limit:
+            break
+    if not sections:
+        return "Selected tender documents do not currently have extracted text available."
+    header = (
+        f"Extracted text from {len(sections)} document(s)"
+        + (" (truncated for chat context):" if total_length >= limit else ":")
+    )
+    if processed_count > len(sections):
+        header += f"\nAdditional processed documents were omitted after the {limit}-character context limit."
+    return header + "\n\n" + "\n\n---\n\n".join(sections)
+
+
 def _general_llm_chat_response(message: str, page_context: dict | None, tender: Tender | None, client, model_name: str) -> tuple[str, list[str]]:
+    selected_document_ids = page_context.get("selected_document_ids") if page_context else None
     prompt = render_prompt(
         "chat_general_answer",
         page_context=_serialize_page_context(page_context),
         tender_context=_serialize_tender_context(tender),
+        document_text_context=_serialize_document_text_context(tender, selected_document_ids=selected_document_ids),
         user_message=message,
     )
     answer = client.generate_text(model_name, prompt)
@@ -342,7 +387,7 @@ def _general_llm_chat_response(message: str, page_context: dict | None, tender: 
         raise ValueError("The chat model returned an empty response.")
     return answer, [
         f"General chat model: {model_name}",
-        "Used the general chat prompt file with page and tender context.",
+        "Used the general chat prompt file with page, tender, and extracted document text context.",
         "Returned an LLM-generated answer because no higher-priority action was triggered.",
     ]
 
@@ -351,6 +396,7 @@ def build_chat_response(
     message: str,
     page_context: dict | None,
     tender: Tender | None,
+    selected_document_ids: list[int] | None = None,
     intent_hint: str | None = None,
     answer_client=None,
     answer_model_name: str | None = None,
@@ -381,7 +427,10 @@ def build_chat_response(
         context_label = page_context.get("page") if page_context else "this screen"
         if answer_client is not None and answer_model_name:
             try:
-                message_text, steps = _general_llm_chat_response(message, page_context, tender, answer_client, answer_model_name)
+                effective_page_context = dict(page_context or {})
+                if selected_document_ids:
+                    effective_page_context["selected_document_ids"] = selected_document_ids
+                message_text, steps = _general_llm_chat_response(message, effective_page_context, tender, answer_client, answer_model_name)
                 return {"response_type": "answer", "message": message_text, "intermediate_steps": steps, "actions": []}
             except Exception as exc:
                 llm_steps = [f"General chat answer fell back to the simple response: {exc}"]
@@ -511,7 +560,10 @@ def build_chat_response(
 
     if answer_client is not None and answer_model_name:
         try:
-            message_text, steps = _general_llm_chat_response(message, page_context, tender, answer_client, answer_model_name)
+            effective_page_context = dict(page_context or {})
+            if selected_document_ids:
+                effective_page_context["selected_document_ids"] = selected_document_ids
+            message_text, steps = _general_llm_chat_response(message, effective_page_context, tender, answer_client, answer_model_name)
             return {"response_type": "answer", "message": message_text, "intermediate_steps": steps, "actions": []}
         except Exception as exc:
             fallback_steps = [f"General chat answer fell back to the built-in summary: {exc}"]

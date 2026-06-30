@@ -7,6 +7,19 @@ const clearButton = document.getElementById("chat-clear-button");
 let historyLoaded = false;
 let lastRenderedHistoryCount = 0;
 
+function buildChatContext() {
+  const context = { ...chatContext };
+  const selectedIds = Array.from(document.querySelectorAll(".extraction-document-checkbox:checked"))
+    .map((checkbox) => Number(checkbox.value))
+    .filter((value) => Number.isFinite(value));
+  if (selectedIds.length) {
+    context.selected_document_ids = selectedIds;
+  } else {
+    delete context.selected_document_ids;
+  }
+  return context;
+}
+
 function appendMessage(role, text, steps = []) {
   const node = document.createElement("div");
   node.className = `chat-message ${role}`;
@@ -37,7 +50,7 @@ async function loadHistory() {
   const response = await fetch("/chat/history", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ context: chatContext }),
+    body: JSON.stringify({ context: buildChatContext() }),
   });
   const payload = await response.json();
   if (payload.messages?.length) {
@@ -57,7 +70,7 @@ if (clearButton) {
     const response = await fetch("/chat/clear", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ context: chatContext }),
+      body: JSON.stringify({ context: buildChatContext() }),
     });
     const payload = await response.json();
     chatHistory.innerHTML = "";
@@ -84,7 +97,7 @@ if (chatForm) {
     const response = await fetch("/chat/message", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, context: chatContext }),
+      body: JSON.stringify({ message, context: buildChatContext() }),
     });
     const payload = await response.json();
     appendMessage("assistant", payload.message || "No response.", payload.intermediate_steps || []);
@@ -137,8 +150,9 @@ if (uploadForm) {
     if (!input.files.length) return;
     const formData = new FormData();
     formData.append("file", input.files[0]);
-    formData.append("context", JSON.stringify(chatContext));
-    if (chatContext.tender_id) formData.append("tender_id", String(chatContext.tender_id));
+    const requestContext = buildChatContext();
+    formData.append("context", JSON.stringify(requestContext));
+    if (requestContext.tender_id) formData.append("tender_id", String(requestContext.tender_id));
     const response = await fetch("/chat/upload", { method: "POST", body: formData });
     const payload = await response.json();
     appendMessage("assistant", payload.message || "Upload finished.");
@@ -189,7 +203,7 @@ if (jobsRoot) {
       fetch("/chat/history", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ context: chatContext }),
+        body: JSON.stringify({ context: buildChatContext() }),
       }),
     ]);
     const jobsPayload = await jobsResponse.json();

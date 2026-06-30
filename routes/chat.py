@@ -146,6 +146,7 @@ def message():
             user_message,
             page_context,
             tender,
+            selected_document_ids=page_context.get("selected_document_ids"),
             intent_hint=intent_hint,
             answer_client=answer_client,
             answer_model_name=answer_model_name,
