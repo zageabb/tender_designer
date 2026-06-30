@@ -97,10 +97,15 @@ def render_markdown_html(text: str | None) -> Markup:
             rows.append(cells)
         header = rows[0]
         body_rows = rows[2:] if len(rows) > 2 else []
+        header_html = "".join("<th>" + _format_inline_markdown(cell) + "</th>" for cell in header)
+        body_html = "".join(
+            "<tr>" + "".join("<td>" + _format_inline_markdown(cell) + "</td>" for cell in row) + "</tr>"
+            for row in body_rows
+        )
         html.append(
             "<table class=\"table table-sm table-bordered markdown-table\">"
-            f"<thead><tr>{''.join(f'<th>{_format_inline_markdown(cell)}</th>' for cell in header)}</tr></thead>"
-            f"<tbody>{''.join(f'<tr>{''.join(f'<td>{_format_inline_markdown(cell)}</td>' for cell in row)}</tr>' for row in body_rows)}</tbody>"
+            f"<thead><tr>{header_html}</tr></thead>"
+            f"<tbody>{body_html}</tbody>"
             "</table>"
         )
         table_lines = []
