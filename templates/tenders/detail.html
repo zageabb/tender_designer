@@ -33,6 +33,9 @@
   <form method="post" action="{{ url_for('tenders.recalculate_tender', tender_id=tender.id) }}">
     <button class="btn btn-outline-dark" type="submit">Recalculate Totals</button>
   </form>
+  <form method="post" action="{{ url_for('tender_emails.create_tender_email', tender_id=tender.id) }}" data-requires-doc-selection="true">
+    <button class="btn btn-outline-dark" type="submit">Send Selected Files</button>
+  </form>
 </div>
 
 <div class="row g-3 mb-4">
@@ -69,6 +72,39 @@
         </tr>
         {% else %}
         <tr><td colspan="5" class="text-muted">No RFQs created for this tender yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card glass-panel mb-4" id="tender-emails">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span>Tender Emails</span>
+    <span class="text-muted small">Document email drafts linked to tender {{ tender.tender_number }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead><tr><th>Tender Number</th><th>Recipient</th><th>Subject</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody>
+        {% for tender_email in tender.tender_emails %}
+        <tr>
+          <td><strong>{{ tender.tender_number }}</strong></td>
+          <td>{{ tender_email.recipient_email or "Not set" }}</td>
+          <td>{{ tender_email.subject }}</td>
+          <td><span class="badge text-bg-light">{{ tender_email.status }}</span></td>
+          <td>
+            <div class="d-flex gap-2 flex-wrap">
+              <a class="btn btn-sm btn-outline-primary" href="{{ url_for('tender_emails.view_tender_email', tender_email_id=tender_email.id) }}">Open</a>
+              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('tender_emails.download_tender_email', tender_email_id=tender_email.id) }}">Download .eml</a>
+              <form method="post" action="{{ url_for('tender_emails.delete_tender_email', tender_email_id=tender_email.id) }}" onsubmit="return confirm('Delete tender email draft {{ tender_email.subject }}? This will remove the draft and its generated email file.');">
+                <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="text-muted">No tender email drafts created for this tender yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>

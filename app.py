@@ -11,6 +11,7 @@ from routes.chat import chat_bp
 from routes.dashboard import dashboard_bp
 from routes.rfqs import rfqs_bp
 from routes.settings import settings_bp
+from routes.tender_emails import tender_emails_bp
 from routes.tenders import tenders_bp
 from services.extraction_jobs import start_extraction_worker
 from services.settings_service import ensure_default_settings
@@ -35,6 +36,7 @@ def create_app() -> Flask:
     app.register_blueprint(chat_bp)
     app.register_blueprint(settings_bp)
     app.register_blueprint(rfqs_bp)
+    app.register_blueprint(tender_emails_bp)
     start_extraction_worker(app)
     return app
 

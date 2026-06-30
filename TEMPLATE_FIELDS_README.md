@@ -105,6 +105,32 @@ Source:
 - `line_items_table`: generated markdown-style table of the selected RFQ lines
 - `email_signature`: value from the Default Email Signature setting
 
+### `tender_email_body.md`
+
+Supported placeholders:
+
+- `{{recipient_email}}`
+- `{{tender_number}}`
+- `{{tender_title}}`
+- `{{tender_reference}}`
+- `{{customer_name}}`
+- `{{tender_status}}`
+- `{{submission_date}}`
+- `{{selected_documents_list}}`
+- `{{email_signature}}`
+
+Source:
+
+- `recipient_email`: value entered in the create-email form
+- `tender_number`: tender number only
+- `tender_title`: tender title only
+- `tender_reference`: tender number plus title when a title exists
+- `customer_name`: tender customer name
+- `tender_status`: current tender status
+- `submission_date`: tender submission date in ISO format, or `Not set`
+- `selected_documents_list`: rendered list of the selected tender document filenames
+- `email_signature`: value from the Default Email Signature setting
+
 ### `rfq_line_items_table.md`
 
 Supported placeholders:

@@ -115,13 +115,13 @@ if (chatForm) {
   });
 }
 
-document.querySelectorAll("form[data-llm-request]").forEach((form) => {
+document.querySelectorAll("form[data-requires-doc-selection], form[data-llm-request]").forEach((form) => {
   form.addEventListener("submit", (event) => {
     if (form.dataset.requiresDocSelection === "true") {
       const selectedIds = Array.from(document.querySelectorAll(".extraction-document-checkbox:checked")).map((checkbox) => checkbox.value);
       if (!selectedIds.length) {
         event.preventDefault();
-        window.alert("Select at least one document before running extraction.");
+        window.alert("Select at least one document before continuing.");
         return;
       }
       form.querySelectorAll("input[name='document_ids']").forEach((input) => input.remove());
@@ -133,8 +133,10 @@ document.querySelectorAll("form[data-llm-request]").forEach((form) => {
         form.appendChild(input);
       });
     }
-    const message = form.dataset.llmRequest || "LLM request started.";
-    appendMessage("system", message);
+    if (form.dataset.llmRequest) {
+      const message = form.dataset.llmRequest || "LLM request started.";
+      appendMessage("system", message);
+    }
     const button = form.querySelector("button[type='submit']");
     if (button) {
       button.disabled = true;

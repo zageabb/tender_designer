@@ -34,6 +34,7 @@ class Tender(TimestampMixin, db.Model):
     documents = db.relationship("TenderDocument", back_populates="tender", cascade="all, delete-orphan")
     items = db.relationship("TenderItem", back_populates="tender", cascade="all, delete-orphan")
     rfqs = db.relationship("RFQ", back_populates="tender", cascade="all, delete-orphan")
+    tender_emails = db.relationship("TenderEmail", back_populates="tender", cascade="all, delete-orphan")
     supplier_responses = db.relationship("SupplierResponse", back_populates="tender", cascade="all, delete-orphan")
     questions = db.relationship("TenderQuestion", back_populates="tender", cascade="all, delete-orphan")
     llm_runs = db.relationship("LLMRunLog", cascade="all, delete-orphan")
@@ -136,6 +137,29 @@ class RFQLine(db.Model):
     notes = db.Column(db.Text)
 
     rfq = db.relationship("RFQ", back_populates="lines")
+
+
+class TenderEmail(TimestampMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    tender_id = db.Column(db.Integer, db.ForeignKey("tender.id"), nullable=False)
+    recipient_email = db.Column(db.String(255))
+    subject = db.Column(db.String(255), nullable=False)
+    body_text = db.Column(db.Text)
+    status = db.Column(db.String(100), default="Draft", nullable=False)
+    eml_file_path = db.Column(db.String(500))
+    notes = db.Column(db.Text)
+
+    tender = db.relationship("Tender", back_populates="tender_emails")
+    documents = db.relationship("TenderEmailDocument", back_populates="tender_email", cascade="all, delete-orphan")
+
+
+class TenderEmailDocument(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    tender_email_id = db.Column(db.Integer, db.ForeignKey("tender_email.id"), nullable=False)
+    tender_document_id = db.Column(db.Integer, db.ForeignKey("tender_document.id"), nullable=False)
+
+    tender_email = db.relationship("TenderEmail", back_populates="documents")
+    tender_document = db.relationship("TenderDocument")
 
 
 class SupplierResponse(db.Model):

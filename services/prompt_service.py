@@ -125,6 +125,22 @@ PROMPT_FILES = {
             "| {{line_quantity}} | {{item_description}} | {{line_description}} |\n"
         ),
     },
+    "tender_email_body": {
+        "filename": "tender_email_body.md",
+        "title": "Tender Email Body Template",
+        "description": "Template file used to build tender document email drafts from tender and selected-document context.",
+        "default_content": (
+            "# Tender Email Body Template\n\n"
+            "Hello,\n\n"
+            "Please find the selected tender documents attached for {{tender_reference}}.\n\n"
+            "Customer: {{customer_name}}\n"
+            "Tender status: {{tender_status}}\n"
+            "Submission date: {{submission_date}}\n\n"
+            "Attached documents:\n"
+            "{{selected_documents_list}}\n\n"
+            "{{email_signature}}\n"
+        ),
+    },
 }
 
 

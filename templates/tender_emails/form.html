@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Create Tender Email | Tender Designer{% endblock %}
+{% block content %}
+<section class="hero-card mb-4">
+  <div>
+    <span class="eyebrow">Document Email Draft</span>
+    <h1 class="display-title">Send Selected Files</h1>
+    <p class="hero-copy mb-0">Create a downloadable email draft with the currently selected tender documents attached.</p>
+  </div>
+  <div class="hero-metric">
+    <span class="hero-metric-label">Tender</span>
+    <strong>{{ tender.tender_number }}</strong>
+  </div>
+</section>
+
+<form method="post" class="card glass-panel">
+  <div class="card-body">
+    {% for document in selected_documents %}
+    <input type="hidden" name="document_ids" value="{{ document.id }}">
+    {% endfor %}
+    <div class="row g-3 mb-4">
+      <div class="col-md-6">
+        <label class="form-label">To</label>
+        <input class="form-control" name="recipient_email" value="{{ recipient_email }}" placeholder="recipient@example.com">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Subject</label>
+        <input class="form-control" name="subject" value="{{ subject }}">
+      </div>
+      <div class="col-12">
+        <label class="form-label">Body</label>
+        <textarea class="form-control" name="body_text" rows="12">{{ body_text }}</textarea>
+        <div class="form-text">The default body comes from the configurable template on the Settings screen.</div>
+      </div>
+    </div>
+
+    <div class="section-heading mb-3">
+      <h2 class="h5 mb-0">Attached Documents</h2>
+      <span class="text-muted">These selected tender files will be attached to the generated `.eml`.</span>
+    </div>
+    <ul class="mb-0">
+      {% for document in selected_documents %}
+      <li>{{ document.original_filename }} <span class="text-muted">({{ document.file_type }})</span></li>
+      {% endfor %}
+    </ul>
+  </div>
+  <div class="card-footer d-flex justify-content-between">
+    <a class="btn btn-outline-secondary" href="{{ url_for('tenders.detail_tender', tender_id=tender.id) }}">Back to Tender</a>
+    <button class="btn btn-primary" type="submit" name="save_draft" value="1">Generate Email Draft</button>
+  </div>
+</form>
+{% endblock %}

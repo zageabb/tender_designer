@@ -11,6 +11,7 @@ TENDER_SUBDIRECTORIES = (
     "original_documents",
     "extracted_text",
     "rfqs",
+    "tender_emails",
     "supplier_responses",
     "exports",
 )
