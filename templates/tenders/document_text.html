@@ -15,7 +15,15 @@
     <a class="btn btn-outline-secondary" href="{{ url_for('tenders.detail_tender', tender_id=document.tender_id) }}">Back to Tender</a>
   </div>
   <div class="card-body">
-    <pre class="email-preview">{{ document.extracted_text or document.processing_notes or "No extracted text available." }}</pre>
+    {% if document.extracted_text %}
+      {% if extracted_text_is_markdown %}
+        <div class="markdown-rendered">{{ extracted_text_html }}</div>
+      {% else %}
+        <pre class="email-preview">{{ document.extracted_text }}</pre>
+      {% endif %}
+    {% else %}
+      <pre class="email-preview">{{ document.processing_notes or "No extracted text available." }}</pre>
+    {% endif %}
   </div>
 </div>
 {% endblock %}

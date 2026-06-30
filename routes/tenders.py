@@ -17,6 +17,7 @@ from services.document_extraction import extract_text
 from services.extraction_jobs import TASK_CONFIG, enqueue_extraction_job
 from services.file_storage import ensure_tender_directories, save_tender_upload
 from services.chat_service import add_chat_message, get_or_create_session
+from services.markdown_tools import extracted_text_suffix, looks_like_markdown, render_markdown_html
 from services.settings_service import get_task_model
 
 
@@ -420,8 +421,13 @@ def process_document(document_id: int):
     text, error = extract_text(document.file_path)
     extracted_dir = current_app.config["DATA_DIR"] / "tenders" / str(document.tender_id) / "extracted_text"
     extracted_dir.mkdir(parents=True, exist_ok=True)
-    text_path = extracted_dir / f"{document.stored_filename}.txt"
     if text:
+        text_path = extracted_dir / f"{document.stored_filename}{extracted_text_suffix(text)}"
+        if document.extracted_text_path and document.extracted_text_path != str(text_path) and os.path.exists(document.extracted_text_path):
+            try:
+                os.remove(document.extracted_text_path)
+            except OSError:
+                pass
         text_path.write_text(text, encoding="utf-8")
         document.extracted_text = text
         document.extracted_text_path = str(text_path)
@@ -456,9 +462,13 @@ def delete_document(document_id: int):
 @tenders_bp.route("/documents/<int:document_id>/text")
 def view_document_text(document_id: int):
     document = TenderDocument.query.get_or_404(document_id)
+    extracted_text = document.extracted_text or ""
+    is_markdown = looks_like_markdown(extracted_text)
     return render_template(
         "tenders/document_text.html",
         document=document,
+        extracted_text_html=render_markdown_html(extracted_text) if is_markdown else None,
+        extracted_text_is_markdown=is_markdown,
         chat_context={
             "page": "tender_document_text",
             "tender_id": document.tender_id,

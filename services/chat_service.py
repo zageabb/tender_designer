@@ -10,6 +10,7 @@ from pathlib import Path
 from database import db
 from models import ChatAction, ChatMessage, ChatSession, ChatUpload, Tender, TenderDocument, TenderItem
 from services.file_storage import ensure_tender_directories
+from services.markdown_tools import extracted_text_suffix
 from services.prompt_service import render_prompt
 
 MAX_CHAT_DOCUMENT_CONTEXT_CHARS = 20000
@@ -605,7 +606,7 @@ def apply_confirmed_action(action: ChatAction, data_dir: Path) -> str:
         original_path = Path(upload.file_path)
         destination = tender_dir / "original_documents" / upload.stored_filename
         destination.write_bytes(original_path.read_bytes())
-        extracted_path = tender_dir / "extracted_text" / f"{upload.stored_filename}.txt"
+        extracted_path = tender_dir / "extracted_text" / f"{upload.stored_filename}{extracted_text_suffix(upload.extracted_text)}"
         if upload.extracted_text:
             extracted_path.write_text(upload.extracted_text, encoding="utf-8")
         db.session.add(

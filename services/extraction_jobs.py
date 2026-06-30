@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import queue
 import threading
 from datetime import datetime
@@ -13,6 +14,7 @@ from models import ExtractionJob, LLMRunLog, Tender
 from services.chat_service import add_chat_message, get_or_create_session
 from services.document_extraction import extract_text
 from services.llm_tasks import extract_tender_items, extract_tender_metadata, extract_tender_questions
+from services.markdown_tools import extracted_text_suffix
 from services.ollama_client import OllamaClient
 from services.settings_service import get_setting, get_task_model
 
@@ -70,7 +72,12 @@ def _process_selected_documents(app: Flask, tender: Tender, selected_document_id
         if text:
             extracted_dir = app.config["DATA_DIR"] / "tenders" / str(document.tender_id) / "extracted_text"
             extracted_dir.mkdir(parents=True, exist_ok=True)
-            text_path = extracted_dir / f"{document.stored_filename}.txt"
+            text_path = extracted_dir / f"{document.stored_filename}{extracted_text_suffix(text)}"
+            if document.extracted_text_path and document.extracted_text_path != str(text_path) and os.path.exists(document.extracted_text_path):
+                try:
+                    os.remove(document.extracted_text_path)
+                except OSError:
+                    pass
             text_path.write_text(text, encoding="utf-8")
             document.extracted_text = text
             document.extracted_text_path = str(text_path)

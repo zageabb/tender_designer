@@ -155,6 +155,131 @@ body {
   margin-bottom: 0.75rem;
 }
 
+.chat-message-body > :last-child,
+.chat-steps > :last-child {
+  margin-bottom: 0;
+}
+
+.chat-message-body p,
+.chat-steps p {
+  margin: 0 0 0.65rem;
+}
+
+.chat-message-body ul,
+.chat-message-body ol,
+.chat-steps ul,
+.chat-steps ol {
+  margin: 0 0 0.75rem;
+  padding-left: 1.2rem;
+}
+
+.chat-message-body li,
+.chat-steps li {
+  margin-bottom: 0.3rem;
+}
+
+.chat-message-body a,
+.chat-steps a {
+  color: #0b5cab;
+  text-decoration: underline;
+}
+
+.chat-message-body code,
+.chat-steps code {
+  font-family: "IBM Plex Mono", monospace;
+  background: rgba(17, 58, 82, 0.08);
+  border-radius: 0.35rem;
+  padding: 0.05rem 0.35rem;
+  font-size: 0.9em;
+}
+
+.chat-message-body pre,
+.chat-steps pre {
+  margin: 0 0 0.75rem;
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  background: #102230;
+  color: #f5f7fb;
+  overflow-x: auto;
+}
+
+.chat-message-body pre code,
+.chat-steps pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+
+.markdown-rendered > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-rendered p {
+  margin: 0 0 0.75rem;
+}
+
+.markdown-rendered ul,
+.markdown-rendered ol {
+  margin: 0 0 1rem;
+  padding-left: 1.3rem;
+}
+
+.markdown-rendered li {
+  margin-bottom: 0.35rem;
+}
+
+.markdown-rendered h1,
+.markdown-rendered h2,
+.markdown-rendered h3,
+.markdown-rendered h4,
+.markdown-rendered h5,
+.markdown-rendered h6 {
+  margin: 1.1rem 0 0.65rem;
+  color: var(--ink-dark);
+}
+
+.markdown-rendered h1:first-child,
+.markdown-rendered h2:first-child,
+.markdown-rendered h3:first-child,
+.markdown-rendered h4:first-child,
+.markdown-rendered h5:first-child,
+.markdown-rendered h6:first-child {
+  margin-top: 0;
+}
+
+.markdown-rendered a {
+  color: #0b5cab;
+  text-decoration: underline;
+}
+
+.markdown-rendered code {
+  font-family: "IBM Plex Mono", monospace;
+  background: rgba(17, 58, 82, 0.08);
+  border-radius: 0.35rem;
+  padding: 0.05rem 0.35rem;
+  font-size: 0.92em;
+}
+
+.markdown-rendered pre {
+  margin: 0 0 0.9rem;
+  padding: 0.85rem;
+  border-radius: 0.75rem;
+  background: #102230;
+  color: #f5f7fb;
+  overflow-x: auto;
+}
+
+.markdown-rendered pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+
+.markdown-rendered .markdown-table {
+  margin-bottom: 1rem;
+  background: white;
+}
+
 .chat-message.user {
   background: #d9ecff;
 }
@@ -173,10 +298,8 @@ body {
   margin-top: 0.6rem;
   padding-top: 0.6rem;
   border-top: 1px dashed rgba(16, 34, 48, 0.15);
-  white-space: pre-wrap;
   font-size: 0.82rem;
   color: var(--muted);
-  font-family: "IBM Plex Mono", monospace;
 }
 
 .action-bar {

@@ -24,12 +24,13 @@ function appendMessage(role, text, steps = []) {
   const node = document.createElement("div");
   node.className = `chat-message ${role}`;
   const body = document.createElement("div");
-  body.textContent = text;
+  body.className = "chat-message-body";
+  body.innerHTML = renderMarkdown(text);
   node.appendChild(body);
   if (steps.length) {
     const detail = document.createElement("div");
     detail.className = "chat-steps";
-    detail.textContent = steps.map((step) => `- ${step}`).join("\n");
+    detail.innerHTML = renderMarkdown(steps.map((step) => `- ${step}`).join("\n"));
     node.appendChild(detail);
   }
   chatHistory.appendChild(node);
@@ -43,6 +44,100 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function formatInlineMarkdown(value) {
+  let formatted = escapeHtml(value);
+  formatted = formatted.replace(/`([^`]+)`/g, "<code>$1</code>");
+  formatted = formatted.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  formatted = formatted.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  formatted = formatted.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+  return formatted;
+}
+
+function renderMarkdown(text) {
+  const source = String(text || "").replace(/\r\n/g, "\n").trim();
+  if (!source) return "";
+
+  const lines = source.split("\n");
+  const html = [];
+  let paragraph = [];
+  let listType = null;
+  let listItems = [];
+  let inCodeBlock = false;
+  let codeLines = [];
+
+  function flushParagraph() {
+    if (!paragraph.length) return;
+    html.push(`<p>${paragraph.map((line) => formatInlineMarkdown(line)).join("<br>")}</p>`);
+    paragraph = [];
+  }
+
+  function flushList() {
+    if (!listType || !listItems.length) return;
+    html.push(`<${listType}>${listItems.map((item) => `<li>${formatInlineMarkdown(item)}</li>`).join("")}</${listType}>`);
+    listType = null;
+    listItems = [];
+  }
+
+  function flushCodeBlock() {
+    if (!inCodeBlock) return;
+    html.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+    inCodeBlock = false;
+    codeLines = [];
+  }
+
+  for (const line of lines) {
+    if (line.trim().startsWith("```")) {
+      flushParagraph();
+      flushList();
+      if (inCodeBlock) {
+        flushCodeBlock();
+      } else {
+        inCodeBlock = true;
+      }
+      continue;
+    }
+
+    if (inCodeBlock) {
+      codeLines.push(line);
+      continue;
+    }
+
+    const unorderedMatch = line.match(/^\s*[-*]\s+(.*)$/);
+    const orderedMatch = line.match(/^\s*\d+\.\s+(.*)$/);
+
+    if (!line.trim()) {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+
+    if (unorderedMatch) {
+      flushParagraph();
+      if (listType && listType !== "ul") flushList();
+      listType = "ul";
+      listItems.push(unorderedMatch[1]);
+      continue;
+    }
+
+    if (orderedMatch) {
+      flushParagraph();
+      if (listType && listType !== "ol") flushList();
+      listType = "ol";
+      listItems.push(orderedMatch[1]);
+      continue;
+    }
+
+    flushList();
+    paragraph.push(line);
+  }
+
+  flushParagraph();
+  flushList();
+  flushCodeBlock();
+
+  return html.join("");
 }
 
 async function loadHistory() {
