@@ -15,10 +15,11 @@ from database import db
 from models import ExtractionJob, LLMRunLog, Tender, TenderDocument, TenderItem, TenderQuestion, TenderSubItem, recalculate_tender_totals
 from services.document_extraction import extract_text
 from services.extraction_jobs import TASK_CONFIG, enqueue_extraction_job
-from services.file_storage import ensure_tender_directories, save_tender_upload
+from services.file_storage import ensure_tender_directories, save_tender_bytes, save_tender_upload
 from services.chat_service import add_chat_message, get_or_create_session
 from services.markdown_tools import extracted_text_suffix, looks_like_markdown, render_markdown_html
 from services.settings_service import get_task_model
+from services.upload_ingestion import expand_upload_entries
 
 
 tenders_bp = Blueprint("tenders", __name__, url_prefix="/tenders")
@@ -369,49 +370,51 @@ def upload_document(tender_id: int):
     if not uploads or not uploads[0].filename:
         flash("Select at least one file to upload.", "warning")
         return redirect(url_for("tenders.detail_tender", tender_id=tender.id))
+    added_count = 0
     for upload in uploads:
-        extension = Path(upload.filename or "").suffix.lower()
-        if extension not in current_app.config["ALLOWED_UPLOAD_EXTENSIONS"]:
-            flash(f"Skipped unsupported file: {upload.filename}", "warning")
-            continue
-        original_name = secure_filename(upload.filename or "upload")
-        existing_document = TenderDocument.query.filter_by(
-            tender_id=tender.id,
-            original_filename=original_name,
-        ).first()
-        stored_name_hint = existing_document.stored_filename if existing_document else None
-        original_name, stored_name, saved_path = save_tender_upload(
-            current_app.config["DATA_DIR"],
-            tender.id,
-            upload,
-            stored_name=stored_name_hint,
-        )
-        if existing_document is not None:
-            if existing_document.extracted_text_path and os.path.exists(existing_document.extracted_text_path):
-                try:
-                    os.remove(existing_document.extracted_text_path)
-                except OSError:
-                    pass
-            existing_document.stored_filename = stored_name
-            existing_document.file_path = str(saved_path)
-            existing_document.file_type = extension.lstrip(".")
-            existing_document.extracted_text_path = None
-            existing_document.extracted_text = None
-            existing_document.processed = False
-            existing_document.processing_notes = "Re-uploaded and awaiting processing."
-        else:
-            db.session.add(
-                TenderDocument(
-                    tender=tender,
-                    original_filename=original_name,
-                    stored_filename=stored_name,
-                    file_path=str(saved_path),
-                    file_type=extension.lstrip("."),
-                )
+        entries, warnings = expand_upload_entries(upload, current_app.config["ALLOWED_UPLOAD_EXTENSIONS"])
+        for warning in warnings:
+            flash(warning, "warning")
+        for entry in entries:
+            existing_document = TenderDocument.query.filter_by(
+                tender_id=tender.id,
+                original_filename=entry.original_name,
+            ).first()
+            stored_name_hint = existing_document.stored_filename if existing_document else None
+            original_name, stored_name, saved_path = save_tender_bytes(
+                current_app.config["DATA_DIR"],
+                tender.id,
+                entry.original_name,
+                entry.content,
+                stored_name=stored_name_hint,
             )
+            if existing_document is not None:
+                if existing_document.extracted_text_path and os.path.exists(existing_document.extracted_text_path):
+                    try:
+                        os.remove(existing_document.extracted_text_path)
+                    except OSError:
+                        pass
+                existing_document.stored_filename = stored_name
+                existing_document.file_path = str(saved_path)
+                existing_document.file_type = entry.extension.lstrip(".")
+                existing_document.extracted_text_path = None
+                existing_document.extracted_text = None
+                existing_document.processed = False
+                existing_document.processing_notes = "Re-uploaded and awaiting processing."
+            else:
+                db.session.add(
+                    TenderDocument(
+                        tender=tender,
+                        original_filename=original_name,
+                        stored_filename=stored_name,
+                        file_path=str(saved_path),
+                        file_type=entry.extension.lstrip("."),
+                    )
+                )
+            added_count += 1
     tender.status = "Documents Uploaded"
     db.session.commit()
-    flash("Document upload complete.", "success")
+    flash(f"Document upload complete. {added_count} file(s) stored.", "success")
     return _detail_redirect(tender.id, anchor="documents")
 
 

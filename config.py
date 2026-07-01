@@ -33,7 +33,9 @@ class Config:
         ".docx",
         ".xlsx",
         ".txt",
+        ".md",
         ".eml",
         ".msg",
         ".csv",
+        ".zip",
     }

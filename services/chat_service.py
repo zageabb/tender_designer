@@ -8,8 +8,8 @@ from decimal import Decimal
 from pathlib import Path
 
 from database import db
-from models import ChatAction, ChatMessage, ChatSession, ChatUpload, Tender, TenderDocument, TenderItem
-from services.file_storage import ensure_tender_directories
+from models import ChatAction, ChatMessage, ChatSession, ChatUpload, Tender, TenderDocument, TenderItem, TenderSubItem
+from services.file_storage import ensure_tender_directories, save_tender_bytes
 from services.markdown_tools import extracted_text_suffix
 from services.prompt_service import render_prompt
 
@@ -112,6 +112,15 @@ def _heuristic_create_tender_request(normalized: str) -> bool:
     return ("create tender" in normalized) or (verb_match and noun_match and reference_match) or (verb_match and noun_match)
 
 
+def _heuristic_create_tender_from_text_request(normalized: str, raw_message: str) -> bool:
+    if not _heuristic_create_tender_request(normalized):
+        return False
+    stripped = raw_message.strip()
+    if len(stripped) < 80:
+        return False
+    return stripped.count("\n") >= 2 or ":" in stripped or "-" in stripped
+
+
 def _heuristic_add_items_request(normalized: str, raw_message: str) -> bool:
     action_match = any(
         phrase in normalized
@@ -130,25 +139,51 @@ def _heuristic_add_items_request(normalized: str, raw_message: str) -> bool:
 
 def _parse_item_request_lines(message: str) -> list[dict]:
     items: list[dict] = []
+    current_item: dict | None = None
     for raw_line in message.splitlines():
         line = raw_line.strip()
         if not line:
             continue
         match = re.match(r"^(\d+(?:\.\d+)?)\s*x\s+(.+)$", line, flags=re.IGNORECASE)
-        if not match:
-            continue
-        quantity = Decimal(match.group(1))
-        details = match.group(2).strip()
-        description = re.split(r"\s+[–-]\s+", details, maxsplit=1)[0].strip(" .")
-        if not description:
-            description = details[:120]
-        items.append(
-            {
+        if match:
+            quantity = Decimal(match.group(1))
+            details = match.group(2).strip()
+            description = re.split(r"\s+[–-]\s+", details, maxsplit=1)[0].strip(" .")
+            if not description:
+                description = details[:120]
+            current_item = {
                 "description": description[:255],
                 "quantity_required": str(quantity.normalize() if quantity == quantity.to_integral() else quantity),
                 "specification_summary": details,
                 "status": "Needs Review",
                 "source_reference": "Added from AI chat request.",
+                "sub_items": [],
+            }
+            items.append(current_item)
+            continue
+        if current_item is None:
+            continue
+        bullet_match = re.match(r"^(?:[-*]\s+|sub[- ]?item[: ]+)(.+)$", line, flags=re.IGNORECASE)
+        if not bullet_match and raw_line[:1].isspace():
+            bullet_match = re.match(r"^(.+)$", line)
+        if not bullet_match:
+            continue
+        sub_details = bullet_match.group(1).strip(" .")
+        if not sub_details:
+            continue
+        sub_quantity_match = re.match(r"^(\d+(?:\.\d+)?)\s*x\s+(.+)$", sub_details, flags=re.IGNORECASE)
+        if sub_quantity_match:
+            sub_quantity = Decimal(sub_quantity_match.group(1))
+            sub_description = sub_quantity_match.group(2).strip()
+        else:
+            sub_quantity = Decimal("1")
+            sub_description = sub_details
+        current_item["sub_items"].append(
+            {
+                "description": sub_description[:255],
+                "quantity": str(sub_quantity.normalize() if sub_quantity == sub_quantity.to_integral() else sub_quantity),
+                "status": "Needs Review",
+                "notes": sub_details,
             }
         )
     return items
@@ -537,11 +572,33 @@ def build_chat_response(
     answer_client=None,
     answer_model_name: str | None = None,
     latest_upload: ChatUpload | None = None,
+    session_uploads: list[ChatUpload] | None = None,
 ) -> dict:
     normalized = _normalize(message)
     current_page = (page_context or {}).get("page")
 
     if tender is None:
+        if _heuristic_create_tender_from_text_request(normalized, message):
+            title_source = message.strip().splitlines()[0][:80] or "Pasted Tender Text"
+            return {
+                "response_type": "proposed_action",
+                "message": (
+                    "I can create a new tender from the pasted text in this chat. "
+                    "Reply with 'confirm' and I will create the tender and attach the pasted content as a document."
+                ),
+                "intermediate_steps": [
+                    "Detected a create-tender request with substantial pasted text in the chat message.",
+                    "Prepared a create-tender action that will store the pasted text as a tender document for later extraction.",
+                ],
+                "actions": [
+                    {
+                        "action_type": "create_tender_from_text",
+                        "title_hint": title_source,
+                        "source_text": message.strip(),
+                        "requires_confirmation": True,
+                    }
+                ],
+            }
         if current_page == "tender_list":
             if any(phrase in normalized for phrase in {"show tenders", "list tenders", "what tenders", "which tenders", "summarise tenders", "summarize tenders"}):
                 message_text, steps = _summarize_tender_list()
@@ -555,21 +612,25 @@ def build_chat_response(
             if any(phrase in normalized for phrase in {"what is missing", "what's missing", "needs attention", "which tenders need attention", "what needs doing"}):
                 message_text, steps = _summarize_tenders_needing_attention()
                 return {"response_type": "answer", "message": message_text, "intermediate_steps": steps, "actions": []}
-        if latest_upload and (intent_hint == "create_tender_from_upload" or _heuristic_create_tender_request(normalized)):
+        if session_uploads and (intent_hint == "create_tender_from_upload" or _heuristic_create_tender_request(normalized)):
+            upload_ids = [upload.id for upload in session_uploads]
+            upload_names = [upload.original_filename for upload in session_uploads[:5]]
             return {
                 "response_type": "proposed_action",
                 "message": (
-                    f"I can create a new tender from {latest_upload.original_filename}. "
-                    "Reply with 'confirm' and I will create the tender and attach this uploaded document."
+                    "I can create a new tender from the uploaded document"
+                    + ("s" if len(upload_ids) != 1 else "")
+                    + f": {', '.join(upload_names)}. Reply with 'confirm' and I will create the tender and attach "
+                    + ("them." if len(upload_ids) != 1 else "it.")
                 ),
                 "intermediate_steps": [
-                    "Found a recent chat upload without a tender context.",
-                    "Prepared a create-tender action that will move the uploaded document into a new tender record.",
+                    "Found uploaded chat document(s) without a tender context.",
+                    "Prepared a create-tender action that will move the uploaded document set into a new tender record.",
                 ],
                 "actions": [
                     {
-                        "action_type": "create_tender_from_upload",
-                        "chat_upload_id": latest_upload.id,
+                        "action_type": "create_tender_from_uploads",
+                        "chat_upload_ids": upload_ids,
                         "requires_confirmation": True,
                     }
                 ],
@@ -659,6 +720,7 @@ def build_chat_response(
             }
         preview_lines = [
             f"- {item['quantity_required']} x {item['description']}"
+            + (f" ({len(item.get('sub_items') or [])} sub-items)" if item.get("sub_items") else "")
             for item in parsed_items[:8]
         ]
         return {
@@ -738,11 +800,12 @@ def build_chat_response(
 
 def apply_confirmed_action(action: ChatAction, data_dir: Path) -> str:
     payload = json.loads(action.payload_json)
-    if action.action_type == "create_tender_from_upload":
-        upload = ChatUpload.query.get(payload.get("chat_upload_id"))
-        if upload is None:
-            raise ValueError("The uploaded chat document could not be found.")
-        filename_stem = Path(upload.original_filename).stem.replace("_", " ").replace("-", " ").strip() or "New Tender"
+    if action.action_type == "create_tender_from_uploads":
+        upload_ids = payload.get("chat_upload_ids") or []
+        uploads = [upload for upload in (ChatUpload.query.get(upload_id) for upload_id in upload_ids) if upload is not None]
+        if not uploads:
+            raise ValueError("The uploaded chat documents could not be found.")
+        filename_stem = Path(uploads[0].original_filename).stem.replace("_", " ").replace("-", " ").strip() or "New Tender"
         tender = Tender(
             customer_name="Needs Review",
             tender_number=f"AUTO-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
@@ -753,28 +816,65 @@ def apply_confirmed_action(action: ChatAction, data_dir: Path) -> str:
         db.session.add(tender)
         db.session.flush()
         tender_dir = ensure_tender_directories(data_dir, tender.id)
-        original_path = Path(upload.file_path)
-        destination = tender_dir / "original_documents" / upload.stored_filename
-        destination.write_bytes(original_path.read_bytes())
-        extracted_path = tender_dir / "extracted_text" / f"{upload.stored_filename}{extracted_text_suffix(upload.extracted_text)}"
-        if upload.extracted_text:
-            extracted_path.write_text(upload.extracted_text, encoding="utf-8")
-        db.session.add(
-            TenderDocument(
-                tender=tender,
-                original_filename=upload.original_filename,
-                stored_filename=upload.stored_filename,
-                file_path=str(destination),
-                file_type=upload.file_type,
-                extracted_text_path=str(extracted_path) if upload.extracted_text else None,
-                extracted_text=upload.extracted_text,
-                processed=bool(upload.extracted_text),
-                processing_notes=upload.processing_notes or "Created from chat upload.",
+        for upload in uploads:
+            original_path = Path(upload.file_path)
+            destination = tender_dir / "original_documents" / upload.stored_filename
+            destination.write_bytes(original_path.read_bytes())
+            extracted_path = tender_dir / "extracted_text" / f"{upload.stored_filename}{extracted_text_suffix(upload.extracted_text)}"
+            if upload.extracted_text:
+                extracted_path.write_text(upload.extracted_text, encoding="utf-8")
+            db.session.add(
+                TenderDocument(
+                    tender=tender,
+                    original_filename=upload.original_filename,
+                    stored_filename=upload.stored_filename,
+                    file_path=str(destination),
+                    file_type=upload.file_type,
+                    extracted_text_path=str(extracted_path) if upload.extracted_text else None,
+                    extracted_text=upload.extracted_text,
+                    processed=bool(upload.extracted_text),
+                    processing_notes=upload.processing_notes or "Created from chat upload.",
+                )
             )
+        action.status = "applied"
+        action.result_json = json.dumps({"tender_id": tender.id, "redirect_path": f"/tenders/{tender.id}?refreshed={int(datetime.utcnow().timestamp())}#top"})
+        return f"Created tender {tender.tender_number} for review and attached {len(uploads)} uploaded document(s)."
+    if action.action_type == "create_tender_from_text":
+        source_text = (payload.get("source_text") or "").strip()
+        if not source_text:
+            raise ValueError("The pasted tender text was empty.")
+        title_hint = (payload.get("title_hint") or "Pasted Tender Text").strip()
+        tender = Tender(
+            customer_name="Needs Review",
+            tender_number=f"AUTO-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+            title=title_hint[:255],
+            status="Documents Uploaded",
+            notes="Created from pasted AI chat text. Review metadata and run extraction.",
+        )
+        db.session.add(tender)
+        db.session.flush()
+        original_name, stored_name, saved_path = save_tender_bytes(
+            data_dir,
+            tender.id,
+            "chat_pasted_tender.md",
+            source_text.encode("utf-8"),
         )
         action.status = "applied"
         action.result_json = json.dumps({"tender_id": tender.id, "redirect_path": f"/tenders/{tender.id}?refreshed={int(datetime.utcnow().timestamp())}#top"})
-        return f"Created tender {tender.tender_number} for review and attached {upload.original_filename}."
+        db.session.add(
+            TenderDocument(
+                tender=tender,
+                original_filename=original_name,
+                stored_filename=stored_name,
+                file_path=str(saved_path),
+                file_type="md",
+                extracted_text_path=str(saved_path),
+                extracted_text=source_text,
+                processed=True,
+                processing_notes="Created from pasted AI chat text.",
+            )
+        )
+        return f"Created tender {tender.tender_number} from the pasted text and attached it as a markdown document."
     if action.action_type == "add_items_from_message":
         tender = Tender.query.get(payload.get("tender_id"))
         if tender is None:
@@ -782,16 +882,24 @@ def apply_confirmed_action(action: ChatAction, data_dir: Path) -> str:
         items = payload.get("items") or []
         created = 0
         for item_payload in items:
-            db.session.add(
-                TenderItem(
-                    tender=tender,
-                    description=(item_payload.get("description") or "New item")[:255],
-                    quantity_required=Decimal(str(item_payload.get("quantity_required") or "0")),
-                    status=item_payload.get("status") or "Needs Review",
-                    specification_summary=item_payload.get("specification_summary") or None,
-                    source_reference=item_payload.get("source_reference") or "Added from AI chat request.",
-                )
+            item = TenderItem(
+                tender=tender,
+                description=(item_payload.get("description") or "New item")[:255],
+                quantity_required=Decimal(str(item_payload.get("quantity_required") or "0")),
+                status=item_payload.get("status") or "Needs Review",
+                specification_summary=item_payload.get("specification_summary") or None,
+                source_reference=item_payload.get("source_reference") or "Added from AI chat request.",
             )
+            for sub_payload in item_payload.get("sub_items") or []:
+                item.sub_items.append(
+                    TenderSubItem(
+                        description=(sub_payload.get("description") or "New sub-item")[:255],
+                        quantity=Decimal(str(sub_payload.get("quantity") or "1")),
+                        status=sub_payload.get("status") or "Needs Review",
+                        notes=sub_payload.get("notes") or None,
+                    )
+                )
+            db.session.add(item)
             created += 1
         action.status = "applied"
         action.result_json = json.dumps(
@@ -812,6 +920,11 @@ def classify_message_intent(client, model_name: str, message: str, has_upload: b
         return "create_tender_from_upload", [
             "Matched the message against the local create-tender fallback rules.",
             "A recent uploaded file is available and no tender context is active.",
+        ]
+    if not has_upload and not has_tender_context and _heuristic_create_tender_from_text_request(normalized, message):
+        return "create_tender_from_text", [
+            "Matched the message against the local pasted-text create-tender fallback rules.",
+            "No upload is active, but the chat message contains substantial tender source text.",
         ]
     if has_tender_context and _heuristic_add_items_request(normalized, message):
         return "add_items_from_message", [
@@ -839,6 +952,8 @@ def classify_message_intent(client, model_name: str, message: str, has_upload: b
         f"Classifier confidence: {confidence or 'unknown'}",
     ]
     if intent == "create_tender_from_upload" and has_upload and not has_tender_context and confidence in {"high", "medium"}:
+        return intent, steps
+    if intent == "create_tender_from_text" and not has_upload and not has_tender_context and confidence in {"high", "medium"}:
         return intent, steps
     if intent == "add_items_from_message" and has_tender_context and confidence in {"high", "medium"}:
         return intent, steps

@@ -105,7 +105,7 @@ def extract_text(file_path: str | Path) -> tuple[str, str | None]:
     path = Path(file_path)
     suffix = path.suffix.lower()
     try:
-        if suffix == ".txt":
+        if suffix in {".txt", ".md"}:
             return path.read_text(encoding="utf-8", errors="ignore"), None
         if suffix == ".csv":
             return _csv_to_markdown(path), None
@@ -122,7 +122,22 @@ def extract_text(file_path: str | Path) -> tuple[str, str | None]:
         if suffix == ".eml":
             return _eml_to_markdown(path), None
         if suffix == ".msg":
-            return "", "MSG extraction is not yet configured in this initial version."
+            try:
+                import extract_msg
+            except ImportError:
+                return "", "MSG extraction requires the `extract-msg` package to be installed on this system."
+            message = extract_msg.Message(str(path))
+            parts = [
+                "# Email",
+                "",
+                f"- Subject: {(message.subject or '').strip()}",
+                f"- From: {(message.sender or '').strip()}",
+                f"- To: {(message.to or '').strip()}",
+            ]
+            body = (message.body or "").strip()
+            if body:
+                parts.extend(["", "## Body", "", body])
+            return "\n".join(parts).strip(), None
         return "", f"Unsupported file type: {suffix}"
     except Exception as exc:
         return "", str(exc)
