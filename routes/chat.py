@@ -42,12 +42,8 @@ def clear():
     payload = request.get_json(force=True)
     page_context = payload.get("context") or {}
     tender_id = page_context.get("tender_id")
-    query = ChatSession.query
-    if tender_id is None:
-        query = query.filter(ChatSession.tender_id.is_(None))
-    else:
-        query = query.filter_by(tender_id=tender_id)
-    sessions = query.all()
+    session = get_or_create_session(db, tender_id, page_context)
+    sessions = [session] if session else []
     cleared = 0
     for session in sessions:
         for upload in session.uploads:
@@ -76,7 +72,11 @@ def message():
     tender = Tender.query.get(tender_id) if tender_id else None
     session = get_or_create_session(db, tender_id, page_context)
     normalized = user_message.lower().strip()
-    latest_upload = ChatUpload.query.order_by(ChatUpload.created_at.desc()).first()
+    latest_upload = (
+        ChatUpload.query.filter_by(chat_session_id=session.id)
+        .order_by(ChatUpload.created_at.desc())
+        .first()
+    )
     classifier_steps: list[str] = []
     intent_hint = None
     answer_client = None
@@ -150,6 +150,7 @@ def message():
             intent_hint=intent_hint,
             answer_client=answer_client,
             answer_model_name=answer_model_name,
+            latest_upload=latest_upload,
         )
         if classifier_steps:
             response_payload["intermediate_steps"] = classifier_steps + response_payload.get("intermediate_steps", [])

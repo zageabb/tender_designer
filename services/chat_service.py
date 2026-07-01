@@ -25,15 +25,28 @@ ALLOWED_UPDATE_FIELDS = {
 }
 
 
+def _session_scope_context(page_context: dict | None, tender_id: int | None) -> dict:
+    if tender_id is not None:
+        return {"tender_id": tender_id}
+    context = page_context or {}
+    return {
+        "page": context.get("page"),
+        "table": context.get("table"),
+        "selected_record_id": context.get("selected_record_id"),
+    }
+
+
 def get_or_create_session(db, tender_id: int | None, page_context: dict | None) -> ChatSession:
+    scope_context = _session_scope_context(page_context, tender_id)
+    scope_json = json.dumps(scope_context, sort_keys=True)
     query = ChatSession.query
     if tender_id is None:
-        query = query.filter(ChatSession.tender_id.is_(None))
+        query = query.filter(ChatSession.tender_id.is_(None), ChatSession.page_context_json == scope_json)
     else:
         query = query.filter_by(tender_id=tender_id)
     session = query.order_by(ChatSession.updated_at.desc()).first()
     if session is None:
-        session = ChatSession(tender_id=tender_id, page_context_json=json.dumps(page_context or {}))
+        session = ChatSession(tender_id=tender_id, page_context_json=scope_json)
         db.session.add(session)
         db.session.flush()
     return session
@@ -374,12 +387,134 @@ def _serialize_document_text_context(
     return header + "\n\n" + "\n\n---\n\n".join(sections)
 
 
+def _list_tenders() -> list[Tender]:
+    return (
+        Tender.query.order_by(
+            Tender.submission_date.is_(None),
+            Tender.submission_date.asc(),
+            Tender.updated_at.desc(),
+        ).all()
+    )
+
+
+def _serialize_tender_list_context(limit: int = 24) -> str:
+    tenders = _list_tenders()
+    if not tenders:
+        return "There are no tenders in the system yet."
+    status_counts: dict[str, int] = {}
+    for tender in tenders:
+        status_counts[tender.status] = status_counts.get(tender.status, 0) + 1
+    lines = [
+        f"Total tenders: {len(tenders)}",
+        "Status counts:",
+    ]
+    for status, count in sorted(status_counts.items(), key=lambda pair: (-pair[1], pair[0])):
+        lines.append(f"- {status}: {count}")
+    lines.append("Visible tenders:")
+    for tender in tenders[:limit]:
+        lines.append(
+            f"- {tender.tender_number} | {tender.customer_name} | {tender.title or '-'} | "
+            f"status {tender.status} | submission {tender.submission_date.isoformat() if tender.submission_date else '-'} | "
+            f"award {tender.award_date.isoformat() if tender.award_date else '-'} | "
+            f"value {_currency(tender.tender_value, tender.currency)}"
+        )
+    if len(tenders) > limit:
+        lines.append(f"Additional tenders omitted: {len(tenders) - limit}")
+    return "\n".join(lines)
+
+
+def _summarize_tender_list() -> tuple[str, list[str]]:
+    tenders = _list_tenders()
+    if not tenders:
+        return "There are no tenders in the system yet.", [
+            "Checked the tender list page context.",
+            "No Tender records were found in the database.",
+        ]
+    lines = [
+        f"- {tender.tender_number}: {tender.customer_name}, {tender.status}, submission {tender.submission_date.isoformat() if tender.submission_date else '-'}"
+        for tender in tenders[:10]
+    ]
+    return f"There are currently {len(tenders)} tenders in the system.\n" + "\n".join(lines), [
+        "Read the tender list from the database using the same ordering as the list page.",
+        "Included the first visible tenders with customer, status, and submission date.",
+    ]
+
+
+def _summarize_submission_schedule() -> tuple[str, list[str]]:
+    tenders = [tender for tender in _list_tenders() if tender.submission_date]
+    if not tenders:
+        return "None of the current tenders have a submission date set yet.", [
+            "Checked the tender list for submission dates.",
+            "No tenders had a populated submission_date.",
+        ]
+    lines = [
+        f"- {tender.submission_date.isoformat()}: {tender.tender_number} for {tender.customer_name} ({tender.status})"
+        for tender in tenders[:10]
+    ]
+    return "Here are the upcoming tender submissions:\n" + "\n".join(lines), [
+        "Read the tender list ordered by submission date.",
+        "Returned the earliest tenders with submission dates set.",
+    ]
+
+
+def _summarize_tender_statuses() -> tuple[str, list[str]]:
+    tenders = _list_tenders()
+    if not tenders:
+        return "There are no tenders in the system yet.", [
+            "Checked the tender list page context.",
+            "No Tender records were found in the database.",
+        ]
+    status_counts: dict[str, int] = {}
+    for tender in tenders:
+        status_counts[tender.status] = status_counts.get(tender.status, 0) + 1
+    lines = [f"- {status}: {count}" for status, count in sorted(status_counts.items(), key=lambda pair: (-pair[1], pair[0]))]
+    return "Tender status summary:\n" + "\n".join(lines), [
+        "Counted all tender records by their current status.",
+        "Sorted the summary by largest status groups first.",
+    ]
+
+
+def _summarize_tenders_needing_attention() -> tuple[str, list[str]]:
+    tenders = _list_tenders()
+    if not tenders:
+        return "There are no tenders in the system yet.", [
+            "Checked the tender list page context.",
+            "No Tender records were found in the database.",
+        ]
+    flagged: list[str] = []
+    for tender in tenders:
+        reasons: list[str] = []
+        if not tender.submission_date:
+            reasons.append("no submission date")
+        if not tender.documents:
+            reasons.append("no documents")
+        if not tender.items:
+            reasons.append("no items")
+        unanswered = sum(1 for question in tender.questions if question.answer_status != "Answered")
+        if unanswered:
+            reasons.append(f"{unanswered} unanswered questions")
+        if reasons:
+            flagged.append(f"- {tender.tender_number}: {', '.join(reasons)}")
+    if not flagged:
+        return "The current tender list does not show any obvious gaps from documents, items, or unanswered questions.", [
+            "Reviewed each tender for missing dates, documents, items, and unanswered questions.",
+            "No obvious attention flags were found.",
+        ]
+    return "These tenders look like they need attention:\n" + "\n".join(flagged[:10]), [
+        "Reviewed each tender for missing submission dates, documents, items, and unanswered questions.",
+        "Returned the first tenders with visible gaps.",
+    ]
+
+
 def _general_llm_chat_response(message: str, page_context: dict | None, tender: Tender | None, client, model_name: str) -> tuple[str, list[str]]:
     selected_document_ids = page_context.get("selected_document_ids") if page_context else None
+    tender_context = _serialize_tender_context(tender)
+    if tender is None and (page_context or {}).get("page") == "tender_list":
+        tender_context = _serialize_tender_list_context()
     prompt = render_prompt(
         "chat_general_answer",
         page_context=_serialize_page_context(page_context),
-        tender_context=_serialize_tender_context(tender),
+        tender_context=tender_context,
         document_text_context=_serialize_document_text_context(tender, selected_document_ids=selected_document_ids),
         user_message=message,
     )
@@ -401,11 +536,25 @@ def build_chat_response(
     intent_hint: str | None = None,
     answer_client=None,
     answer_model_name: str | None = None,
+    latest_upload: ChatUpload | None = None,
 ) -> dict:
     normalized = _normalize(message)
+    current_page = (page_context or {}).get("page")
 
     if tender is None:
-        latest_upload = ChatUpload.query.order_by(ChatUpload.created_at.desc()).first()
+        if current_page == "tender_list":
+            if any(phrase in normalized for phrase in {"show tenders", "list tenders", "what tenders", "which tenders", "summarise tenders", "summarize tenders"}):
+                message_text, steps = _summarize_tender_list()
+                return {"response_type": "answer", "message": message_text, "intermediate_steps": steps, "actions": []}
+            if any(phrase in normalized for phrase in {"submission dates", "upcoming submissions", "submission schedule", "due dates", "which tenders are due", "what is due"}):
+                message_text, steps = _summarize_submission_schedule()
+                return {"response_type": "answer", "message": message_text, "intermediate_steps": steps, "actions": []}
+            if any(phrase in normalized for phrase in {"status summary", "tender statuses", "status breakdown", "how many tenders", "count tenders"}):
+                message_text, steps = _summarize_tender_statuses()
+                return {"response_type": "answer", "message": message_text, "intermediate_steps": steps, "actions": []}
+            if any(phrase in normalized for phrase in {"what is missing", "what's missing", "needs attention", "which tenders need attention", "what needs doing"}):
+                message_text, steps = _summarize_tenders_needing_attention()
+                return {"response_type": "answer", "message": message_text, "intermediate_steps": steps, "actions": []}
         if latest_upload and (intent_hint == "create_tender_from_upload" or _heuristic_create_tender_request(normalized)):
             return {
                 "response_type": "proposed_action",
@@ -440,8 +589,9 @@ def build_chat_response(
         return {
             "response_type": "answer",
             "message": (
-                f"I can help with {context_label}. "
-                "If you upload a document here, I can summarise it or prepare a new tender from it."
+                "I can help with the tender list. Ask for upcoming submission dates, a status summary, or which tenders need attention."
+                if current_page == "tender_list"
+                else f"I can help with {context_label}. If you upload a document here, I can summarise it or prepare a new tender from it."
             ),
             "intermediate_steps": [
                 "Used the current page context from the UI.",
