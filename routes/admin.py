@@ -47,12 +47,40 @@ ADMIN_MODELS = {
     "chat-actions": ChatAction,
 }
 
+ADMIN_MODEL_META = {
+    "tenders": {"label": "Tenders", "description": "Core tender header records and workflow status."},
+    "tender-documents": {"label": "Tender Documents", "description": "Uploaded source files, extracted text, and processing state."},
+    "tender-items": {"label": "Tender Items", "description": "Top-level commercial and delivery line items."},
+    "tender-sub-items": {"label": "Tender Sub-items", "description": "Detailed spec or supplier rows beneath each tender item."},
+    "specifications": {"label": "Specifications", "description": "Specification fragments linked to items or sub-items."},
+    "rfqs": {"label": "RFQs", "description": "RFQ header drafts linked to each tender."},
+    "rfq-lines": {"label": "RFQ Lines", "description": "Individual RFQ pricing lines sent to suppliers."},
+    "supplier-responses": {"label": "Supplier Responses", "description": "Uploaded or parsed supplier quote responses."},
+    "tender-questions": {"label": "Tender Questions", "description": "Tender clarification questions and answer state."},
+    "rag-documents": {"label": "RAG Documents", "description": "Reference documents loaded into retrieval workflows."},
+    "rag-chunks": {"label": "RAG Chunks", "description": "Chunked retrieval records generated from RAG documents."},
+    "llm-run-logs": {"label": "LLM Run Logs", "description": "Prompt, response, and status logs for extraction runs."},
+    "settings": {"label": "Settings", "description": "Stored application settings and prompt configuration."},
+    "chat-sessions": {"label": "Chat Sessions", "description": "Saved chat contexts per tender or page."},
+    "chat-messages": {"label": "Chat Messages", "description": "Persisted user and assistant chat history."},
+    "chat-actions": {"label": "Chat Actions", "description": "Proposed and confirmed AI actions awaiting execution or audit."},
+}
+
 
 def _get_model(slug: str):
     model = ADMIN_MODELS.get(slug)
     if model is None:
         abort(404)
     return model
+
+
+def _model_meta(slug: str) -> dict:
+    default_model = _get_model(slug)
+    return {
+        "label": default_model.__name__,
+        "description": "Browse, edit, and correct extracted records.",
+        **ADMIN_MODEL_META.get(slug, {}),
+    }
 
 
 def _is_editable(column) -> bool:
@@ -76,7 +104,18 @@ def _coerce_value(column, raw_value: str):
 
 @admin_bp.route("/")
 def index():
-    return render_template("admin/index.html", admin_models=ADMIN_MODELS, chat_context={"page": "admin_index"})
+    admin_catalog = []
+    for slug, model in ADMIN_MODELS.items():
+        admin_catalog.append(
+            {
+                "slug": slug,
+                "model": model,
+                "label": _model_meta(slug)["label"],
+                "description": _model_meta(slug)["description"],
+                "count": model.query.count(),
+            }
+        )
+    return render_template("admin/index.html", admin_catalog=admin_catalog, chat_context={"page": "admin_index"})
 
 
 @admin_bp.route("/<string:model_slug>")
@@ -86,6 +125,7 @@ def list_records(model_slug: str):
     return render_template(
         "admin/list.html",
         model=model,
+        model_label=_model_meta(model_slug)["label"],
         model_slug=model_slug,
         records=records,
         inspector=inspect(model),
@@ -113,6 +153,7 @@ def create_record(model_slug: str):
     return render_template(
         "admin/form.html",
         model=model,
+        model_label=_model_meta(model_slug)["label"],
         model_slug=model_slug,
         record=record,
         inspector=mapper,
@@ -128,6 +169,7 @@ def view_record(model_slug: str, record_id: int):
     return render_template(
         "admin/view.html",
         model=model,
+        model_label=_model_meta(model_slug)["label"],
         model_slug=model_slug,
         record=record,
         inspector=inspect(model),
@@ -154,6 +196,7 @@ def edit_record(model_slug: str, record_id: int):
     return render_template(
         "admin/form.html",
         model=model,
+        model_label=_model_meta(model_slug)["label"],
         model_slug=model_slug,
         record=record,
         inspector=mapper,
@@ -170,4 +213,3 @@ def delete_record(model_slug: str, record_id: int):
     db.session.commit()
     flash(f"{model.__name__} deleted.", "success")
     return redirect(url_for("admin.list_records", model_slug=model_slug))
-

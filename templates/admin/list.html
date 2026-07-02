@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}{{ model.__name__ }} | Admin{% endblock %}
+{% block title %}{{ model_label }} | Admin{% endblock %}
 {% block content %}
 <section class="hero-card mb-4">
   <div>
     <span class="eyebrow">Table View</span>
-    <h1 class="display-title">{{ model.__name__ }}</h1>
+    <h1 class="display-title">{{ model_label }}</h1>
     <p class="hero-copy mb-0">First 200 records from this table, ready for inspection and correction.</p>
   </div>
   <a class="btn btn-primary btn-lg" href="{{ url_for('admin.create_record', model_slug=model_slug) }}">Create Record</a>

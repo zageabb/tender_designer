@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}{{ model.__name__ }} #{{ record.id }}{% endblock %}
+{% block title %}{{ model_label }} #{{ record.id }}{% endblock %}
 {% block content %}
 <section class="hero-card mb-4">
   <div>
     <span class="eyebrow">Record Detail</span>
-    <h1 class="display-title">{{ model.__name__ }} #{{ record.id }}</h1>
+    <h1 class="display-title">{{ model_label }} #{{ record.id }}</h1>
     <p class="hero-copy mb-0">Inspect raw values before correcting them or tracing related workflow records.</p>
   </div>
   <div class="hero-actions">

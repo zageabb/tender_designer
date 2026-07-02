@@ -9,13 +9,16 @@
   </div>
 </section>
 <div class="row g-3">
-  {% for slug, model in admin_models.items() %}
+  {% for entry in admin_catalog %}
   <div class="col-md-4">
     <div class="card glass-panel h-100">
       <div class="card-body">
-        <h2 class="h6">{{ model.__name__ }}</h2>
-        <p class="text-muted small mb-3">Browse, edit, and correct extracted records.</p>
-        <a class="btn btn-outline-primary btn-sm" href="{{ url_for('admin.list_records', model_slug=slug) }}">Open Table</a>
+        <div class="d-flex justify-content-between align-items-start gap-3 mb-2">
+          <h2 class="h6 mb-0">{{ entry.label }}</h2>
+          <span class="badge text-bg-light">{{ entry.count }}</span>
+        </div>
+        <p class="text-muted small mb-3">{{ entry.description }}</p>
+        <a class="btn btn-outline-primary btn-sm" href="{{ url_for('admin.list_records', model_slug=entry.slug) }}">Open Table</a>
       </div>
     </div>
   </div>

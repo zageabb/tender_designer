@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}{{ "Create" if is_new else "Edit" }} {{ model.__name__ }}{% endblock %}
+{% block title %}{{ "Create" if is_new else "Edit" }} {{ model_label }}{% endblock %}
 {% block content %}
 <section class="hero-card mb-4">
   <div>
     <span class="eyebrow">Record Editor</span>
-    <h1 class="display-title">{{ "Create" if is_new else "Edit" }} {{ model.__name__ }}</h1>
+    <h1 class="display-title">{{ "Create" if is_new else "Edit" }} {{ model_label }}</h1>
     <p class="hero-copy mb-0">Use this practical editor for corrections, overrides, and manual maintenance.</p>
   </div>
 </section>
