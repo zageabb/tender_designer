@@ -25,7 +25,18 @@
         {% for record in records %}
         <tr>
           {% for column in inspector.columns %}
-          <td>{{ record|attr(column.name) }}</td>
+          {% set value = record|attr(column.name) %}
+          <td>
+            {% if value is string %}
+              {% if value|length > 160 %}
+                <div class="text-preview admin-cell-preview" title="{{ value }}">{{ value[:160] }}...</div>
+              {% else %}
+                <div class="text-preview admin-cell-preview" title="{{ value }}">{{ value }}</div>
+              {% endif %}
+            {% else %}
+              {{ value }}
+            {% endif %}
+          </td>
           {% endfor %}
           <td class="text-end">
             <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.view_record', model_slug=model_slug, record_id=record.id) }}">View</a>

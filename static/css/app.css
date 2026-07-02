@@ -352,6 +352,15 @@ body {
   white-space: normal;
 }
 
+.admin-cell-preview {
+  max-width: 220px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
 .extraction-job-badge.status-queued {
   background: #e4ecf5;
   color: #20435c;
