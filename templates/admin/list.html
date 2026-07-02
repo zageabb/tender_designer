@@ -18,7 +18,7 @@
           {% for column in inspector.columns %}
           <th>{{ column.name }}</th>
           {% endfor %}
-          <th></th>
+          <th class="text-end">Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -39,6 +39,7 @@
           </td>
           {% endfor %}
           <td class="text-end">
+            <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.edit_record', model_slug=model_slug, record_id=record.id) }}">Edit</a>
             <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.view_record', model_slug=model_slug, record_id=record.id) }}">View</a>
           </td>
         </tr>
