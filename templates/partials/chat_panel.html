@@ -1,8 +1,15 @@
+{% set current_chat_page = (chat_context or {}).get("page", "general") %}
 <aside class="chat-panel card shadow-sm">
   <div class="card-header d-flex justify-content-between align-items-center">
     <div>
       <div class="fw-semibold">Assistant</div>
-      <div class="small text-muted">Ask mode and safe change mode</div>
+      <div class="small text-muted">
+        {% if current_chat_page == "computer_finder" %}
+        Spec notes and follow-up chat
+        {% else %}
+        Ask mode and safe change mode
+        {% endif %}
+      </div>
     </div>
     <div class="d-flex gap-2">
       <button class="btn btn-sm btn-outline-danger" type="button" id="chat-clear-button">Clear</button>
@@ -14,7 +21,11 @@
       Context: <span data-chat-context-label>{{ (chat_context or {}).get("page", "general") }}</span>
     </div>
     <div class="chat-history" id="chat-history">
+      {% if current_chat_page == "computer_finder" %}
+      <div class="chat-message assistant">Use the Computer Finder panel for sourced matching. I can help refine the spec or explain a result here.</div>
+      {% else %}
       <div class="chat-message assistant">Ask about this tender, upload a quote, or draft a safe change proposal.</div>
+      {% endif %}
     </div>
     <div class="border-top p-3">
       <form id="chat-upload-form" class="mb-3">
@@ -23,7 +34,7 @@
       </form>
       <form id="chat-form">
         <div class="mb-2">
-          <textarea class="form-control" id="chat-message" rows="3" placeholder="Ask Mode or Change Mode"></textarea>
+          <textarea class="form-control" id="chat-message" rows="3" placeholder="{% if current_chat_page == 'computer_finder' %}Refine the spec or ask about a result{% else %}Ask Mode or Change Mode{% endif %}"></textarea>
         </div>
         <button class="btn btn-primary w-100" type="submit">Send</button>
       </form>

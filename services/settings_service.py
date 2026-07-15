@@ -3,6 +3,24 @@ from __future__ import annotations
 from models import AppSetting
 
 
+DEFAULT_COMPUTER_FINDER_DOMAINS = "\n".join(
+    [
+        "dell.com",
+        "hp.com",
+        "lenovo.com",
+        "apple.com",
+        "microsoft.com",
+        "asus.com",
+        "acer.com",
+        "cdw.com",
+        "insight.com",
+        "connection.com",
+        "provantage.com",
+        "newegg.com",
+        "bestbuy.com",
+    ]
+)
+
 DEFAULT_SETTINGS = {
     "ollama_url": {
         "value": "http://192.168.1.249:11434",
@@ -47,6 +65,38 @@ DEFAULT_SETTINGS = {
     "vector_store_path": {
         "value": "data/vector_store",
         "description": "Local vector store path for future RAG support.",
+    },
+    "computer_finder_model": {
+        "value": "llama3.2",
+        "description": "Ollama model used to plan searches and recommend a computer from sourced web results.",
+    },
+    "computer_finder_results_per_domain": {
+        "value": "3",
+        "description": "Maximum site-restricted search results to collect from each configured website.",
+    },
+    "computer_finder_max_pages_to_read": {
+        "value": "8",
+        "description": "Maximum candidate web pages to fetch and summarise before asking Ollama for a recommendation.",
+    },
+    "computer_finder_allowed_domains": {
+        "value": DEFAULT_COMPUTER_FINDER_DOMAINS,
+        "description": "One searchable website domain per line for computer finder results. Omit https:// prefixes.",
+    },
+    "computer_finder_blocked_domains": {
+        "value": "reddit.com\nquora.com\nwikipedia.org",
+        "description": "Optional website domains to exclude from computer finder web searches.",
+    },
+    "computer_finder_market_country": {
+        "value": "US",
+        "description": "Default procurement country for computer finder searches, using a two-letter country code.",
+    },
+    "computer_finder_market_region": {
+        "value": "",
+        "description": "Optional state, province, or region used to localise computer finder searches.",
+    },
+    "computer_finder_market_city": {
+        "value": "",
+        "description": "Optional city used to localise computer finder searches.",
     },
 }
 

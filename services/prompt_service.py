@@ -103,7 +103,53 @@ PROMPT_FILES = {
             "If the user appears to be asking for a data-changing action, do not perform it here; instead explain that the action flow should be used.\n\n"
             "Page context:\n{{page_context}}\n\n"
             "Tender context:\n{{tender_context}}\n\n"
+            "Extracted document text:\n{{document_text_context}}\n\n"
             "User question:\n{{user_message}}\n"
+        ),
+    },
+    "computer_finder_query_planning": {
+        "filename": "computer_finder_query_planning.md",
+        "title": "Computer Finder Query Planning",
+        "description": "Instruction file used by Ollama to turn a computer specification into concise web search queries.",
+        "default_content": (
+            "# Computer Finder Query Planning Prompt\n\n"
+            "You are planning web searches for a hardware procurement assistant.\n"
+            "Return JSON only with a `queries` array containing 2 to 4 concise search queries.\n"
+            "Do not include `site:` filters; the application adds those for each configured website.\n"
+            "Prefer product family, business model, workstation, laptop, desktop, datasheet, configurable, and warranty terms when useful.\n\n"
+            "Procurement market: {{market_context}}\n\n"
+            "Search websites configured for this workflow:\n{{allowed_domains}}\n\n"
+            "User specification:\n{{computer_spec}}\n"
+        ),
+    },
+    "computer_finder_search": {
+        "filename": "computer_finder_search.md",
+        "title": "Computer Finder Recommendation",
+        "description": "Instruction file used by Ollama to match hardware specs to brands and machine types from sourced web results.",
+        "default_content": (
+            "# Computer Finder Recommendation Prompt\n\n"
+            "You are a hardware procurement assistant. The user provided a computer specification and the application has collected "
+            "site-restricted web results from the configured websites. Use only the supplied search results as evidence.\n\n"
+            "Current date: {{current_date}}\n"
+            "Default procurement market: {{market_context}}\n\n"
+            "Search websites configured for this workflow:\n{{allowed_domains}}\n\n"
+            "Blocked websites:\n{{blocked_domains}}\n\n"
+            "User specification:\n{{computer_spec}}\n\n"
+            "Collected search results and readable page text:\n{{search_results}}\n\n"
+            "Workflow:\n"
+            "1. Parse the required specification into concrete requirements: form factor, CPU class, memory, storage, GPU, display, ports, OS, warranty, budget, and any compliance constraints.\n"
+            "2. Prefer manufacturer product pages, datasheets, configurable models, or business procurement pages when they are present in the results.\n"
+            "3. Recommend one best-fit brand and machine type/model family. Include exact model or part number only when the source text supports it.\n"
+            "4. Compare the recommendation against the supplied spec in a compact table using source numbers like [1] or [2].\n"
+            "5. Include up to two suitable alternatives when the supplied results support them.\n"
+            "6. State gaps, assumptions, and risks clearly. Do not invent availability, pricing, warranty, or part numbers.\n"
+            "7. Cite sources inline with the bracket number from the collected result.\n\n"
+            "Return markdown with these sections:\n"
+            "- Best match\n"
+            "- Spec fit\n"
+            "- Alternatives\n"
+            "- Gaps and assumptions\n"
+            "- Sources\n"
         ),
     },
     "rfq_email_body": {

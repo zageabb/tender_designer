@@ -63,13 +63,49 @@ Supported placeholders:
 
 - `{{page_context}}`
 - `{{tender_context}}`
+- `{{document_text_context}}`
 - `{{user_message}}`
 
 Source:
 
 - `page_context`: serialized summary of the current screen context
 - `tender_context`: serialized summary of the active tender, if one is open
+- `document_text_context`: selected tender document text, truncated for chat context
 - `user_message`: the message typed by the user into chat
+
+### `computer_finder_query_planning.md`
+
+Supported placeholders:
+
+- `{{computer_spec}}`
+- `{{allowed_domains}}`
+- `{{market_context}}`
+
+Source:
+
+- `computer_spec`: the computer requirement entered on the Computer Finder screen
+- `allowed_domains`: editable list of configured search website domains
+- `market_context`: country, region, and city settings used to bias procurement searches
+
+### `computer_finder_search.md`
+
+Supported placeholders:
+
+- `{{current_date}}`
+- `{{market_context}}`
+- `{{allowed_domains}}`
+- `{{blocked_domains}}`
+- `{{computer_spec}}`
+- `{{search_results}}`
+
+Source:
+
+- `current_date`: current local date when the search is run
+- `market_context`: country, region, and city settings used to bias procurement searches
+- `allowed_domains`: editable list of configured search website domains
+- `blocked_domains`: editable list of website domains excluded from results
+- `computer_spec`: the computer requirement entered on the Computer Finder screen
+- `search_results`: site-restricted search result snippets plus readable page text collected before Ollama writes the recommendation
 
 ## RFQ Template
 

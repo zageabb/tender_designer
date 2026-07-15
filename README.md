@@ -18,6 +18,7 @@ This initial build includes:
 - Settings screen for default models and RFQ text
 - Manual item, sub-item, and question entry on tender detail pages
 - RFQ generation with downloadable `.eml` files
+- Ollama-backed Computer Finder for matching a supplied machine specification to sourced brand/model recommendations from editable search websites
 
 ## Setup
 
@@ -53,6 +54,7 @@ You can also load the same dataset from the dashboard using the `Load Sample Dat
 - Database file: `tender_designer.db`
 - Uploaded files and extracted text are kept in `data/`
 - LLM extraction output is logged in `LLMRunLog`
+- Computer Finder uses Ollama for query planning and recommendations, plus site-restricted web search over domains configured in Settings or on the Computer Finder page
 
 ## Next Steps
 

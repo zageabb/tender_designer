@@ -352,6 +352,31 @@ body {
   white-space: normal;
 }
 
+.computer-finder-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.computer-spec-input {
+  min-height: 18rem;
+}
+
+.computer-finder-result {
+  min-height: 12rem;
+}
+
+.computer-finder-sources ol {
+  margin-bottom: 0;
+  padding-left: 1.3rem;
+}
+
+.computer-finder-sources li {
+  margin-bottom: 0.35rem;
+  overflow-wrap: anywhere;
+}
+
 .admin-cell-preview {
   max-width: 220px;
   display: -webkit-box;
@@ -430,7 +455,8 @@ body {
 }
 
 @media (max-width: 1100px) {
-  .layout-grid {
+  .layout-grid,
+  .computer-finder-grid {
     grid-template-columns: 1fr;
   }
 }

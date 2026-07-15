@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Computer Finder | Tender Designer{% endblock %}
+{% block content %}
+<section class="hero-card mb-4">
+  <div>
+    <span class="eyebrow">AI Search</span>
+    <h1 class="display-title">Computer Finder</h1>
+    <p class="hero-copy mb-0">Paste a machine specification and get a sourced brand, model family, and fit check from the configured search websites.</p>
+  </div>
+</section>
+
+<div class="computer-finder-grid">
+  <section class="card glass-panel">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <div>
+        <div>Spec Search</div>
+        <div class="small text-muted fw-normal">Ollama reasoning with site-restricted source gathering</div>
+      </div>
+      <span class="badge text-bg-light">Live web</span>
+    </div>
+    <div class="card-body">
+      <form id="computer-finder-form" data-search-url="{{ url_for('computer_finder.search') }}">
+        <label class="form-label fw-semibold" for="computer-spec">Computer specification</label>
+        <textarea class="form-control computer-spec-input" id="computer-spec" rows="11" placeholder="Example: Business laptop, Intel Core Ultra 7 or Ryzen 7, 32GB RAM, 1TB SSD, Windows 11 Pro, 14 inch screen, Wi-Fi 7, 3 year onsite warranty, under $1,800."></textarea>
+        <div class="d-flex gap-2 flex-wrap mt-3">
+          <button class="btn btn-primary btn-lg" id="computer-finder-submit" type="submit">Search And Match</button>
+          <button class="btn btn-outline-secondary btn-lg" id="computer-finder-clear" type="button">Clear</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section class="card glass-panel">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <div>
+        <div>Search Websites</div>
+        <div class="small text-muted fw-normal">Add or remove one domain per line</div>
+      </div>
+      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('settings.index') }}#computer-finder-prompts">Edit Prompt</a>
+    </div>
+    <div class="card-body">
+      <form id="computer-finder-settings-form" data-settings-url="{{ url_for('computer_finder.update_settings') }}">
+        <div class="row g-3">
+          <div class="col-12">
+            <label class="form-label fw-semibold" for="computer-finder-allowed-domains">Allowed websites</label>
+            <textarea class="form-control font-monospace" id="computer-finder-allowed-domains" name="computer_finder_allowed_domains" rows="8">{{ finder_settings.computer_finder_allowed_domains }}</textarea>
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold" for="computer-finder-blocked-domains">Blocked websites</label>
+            <textarea class="form-control font-monospace" id="computer-finder-blocked-domains" name="computer_finder_blocked_domains" rows="3">{{ finder_settings.computer_finder_blocked_domains }}</textarea>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold" for="computer-finder-model">Model</label>
+            <input class="form-control" id="computer-finder-model" name="computer_finder_model" value="{{ finder_settings.computer_finder_model }}">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold" for="computer-finder-results-per-domain">Results per domain</label>
+            <input class="form-control" id="computer-finder-results-per-domain" name="computer_finder_results_per_domain" value="{{ finder_settings.computer_finder_results_per_domain }}">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold" for="computer-finder-pages-to-read">Pages to read</label>
+            <input class="form-control" id="computer-finder-pages-to-read" name="computer_finder_max_pages_to_read" value="{{ finder_settings.computer_finder_max_pages_to_read }}">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold" for="computer-finder-country">Country</label>
+            <input class="form-control" id="computer-finder-country" name="computer_finder_market_country" value="{{ finder_settings.computer_finder_market_country }}">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold" for="computer-finder-region">Region</label>
+            <input class="form-control" id="computer-finder-region" name="computer_finder_market_region" value="{{ finder_settings.computer_finder_market_region }}">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold" for="computer-finder-city">City</label>
+            <input class="form-control" id="computer-finder-city" name="computer_finder_market_city" value="{{ finder_settings.computer_finder_market_city }}">
+          </div>
+        </div>
+        <button class="btn btn-outline-primary w-100 mt-3" id="computer-finder-settings-submit" type="submit">Save Search Settings</button>
+        <div class="small text-muted mt-3" id="computer-finder-domain-summary">
+          Active: {{ allowed_domains|length }} allowed, {{ blocked_domains|length }} blocked.
+        </div>
+      </form>
+    </div>
+  </section>
+</div>
+
+<section class="card glass-panel mt-4">
+  <div class="card-header">Search Result</div>
+  <div class="card-body">
+    <div id="computer-finder-status" class="alert alert-secondary mb-3">Ready for a spec.</div>
+    <div id="computer-finder-result" class="markdown-rendered computer-finder-result"></div>
+    <div id="computer-finder-sources" class="computer-finder-sources"></div>
+    <div id="computer-finder-steps" class="chat-steps mt-3 d-none"></div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/computer_finder.js') }}"></script>
+{% endblock %}
