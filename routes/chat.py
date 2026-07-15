@@ -230,7 +230,7 @@ def upload():
             if document.extracted_text:
                 message = (
                     f"I received {document.original_filename}. It looks ready for review. "
-                    "You can now ask me to extract pricing, add it to RAG, or treat it as a tender addendum."
+                    "You can now ask me to extract pricing, fill question answers from this file, add it to RAG, or treat it as a tender addendum."
                 )
             else:
                 message = f"I received {document.original_filename}, but I could not extract text yet: {document.processing_notes}"

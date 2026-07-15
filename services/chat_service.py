@@ -8,10 +8,12 @@ from decimal import Decimal
 from pathlib import Path
 
 from database import db
-from models import ChatAction, ChatMessage, ChatSession, ChatUpload, Tender, TenderDocument, TenderItem, TenderSubItem
+from models import ChatAction, ChatMessage, ChatSession, ChatUpload, Tender, TenderDocument, TenderItem, TenderQuestion, TenderSubItem
 from services.file_storage import ensure_tender_directories, save_tender_bytes
 from services.markdown_tools import extracted_text_suffix
+from services.ollama_client import OllamaClient
 from services.prompt_service import render_prompt
+from services.settings_service import get_setting, get_task_model
 
 MAX_CHAT_DOCUMENT_CONTEXT_CHARS = 20000
 
@@ -137,6 +139,33 @@ def _heuristic_add_items_request(normalized: str, raw_message: str) -> bool:
     return action_match and line_match
 
 
+def _heuristic_answer_questions_request(normalized: str) -> bool:
+    action_match = any(
+        phrase in normalized
+        for phrase in {
+            "answer the questions",
+            "fill the questions",
+            "fill in the questions",
+            "fill in the answers",
+            "fill answers",
+            "draft answers",
+            "draft the answers",
+            "use this file to answer",
+            "use this document to answer",
+            "populate answers",
+            "add answers only",
+        }
+    )
+    question_match = "question" in normalized or "questions" in normalized or "answers" in normalized
+    return action_match and question_match
+
+
+def _question_answer_mode(normalized: str) -> str:
+    if any(phrase in normalized for phrase in {"answers only", "final answers", "answer only", "fill final answers"}):
+        return "final_only"
+    return "draft"
+
+
 def _parse_item_request_lines(message: str) -> list[dict]:
     items: list[dict] = []
     current_item: dict | None = None
@@ -193,6 +222,39 @@ def _currency(value: Decimal | int | float | None, code: str) -> str:
     if value is None:
         return f"{code} 0.00"
     return f"{code} {Decimal(value):,.2f}"
+
+
+def _markdown_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = str(value).strip()
+    return cleaned or None
+
+
+def _question_list_context(tender: Tender) -> str:
+    if not tender.questions:
+        return "No tender questions are currently stored."
+    lines = []
+    for question in tender.questions:
+        lines.append(
+            f"- Question Number: {question.question_number or '-'}\n"
+            f"  Section: {question.section or '-'}\n"
+            f"  Status: {question.answer_status or '-'}\n"
+            f"  Question: {question.question_text}"
+        )
+    return "\n".join(lines)
+
+
+def _documents_for_question_answering(tender: Tender, selected_document_ids: list[int] | None = None) -> list[TenderDocument]:
+    if selected_document_ids:
+        selected_ids = {int(document_id) for document_id in selected_document_ids}
+        documents = [document for document in tender.documents if document.id in selected_ids]
+        if documents:
+            return documents
+    if tender.documents:
+        latest = max(tender.documents, key=lambda document: document.uploaded_at or datetime.min)
+        return [latest]
+    return []
 
 
 def _top_missing_areas(tender: Tender) -> list[str]:
@@ -705,6 +767,53 @@ def build_chat_response(
         message_text, steps = _best_price_response(tender)
         return {"response_type": "answer", "message": message_text, "intermediate_steps": steps, "actions": []}
 
+    if intent_hint == "answer_questions_from_documents" or _heuristic_answer_questions_request(normalized):
+        if not tender.questions:
+            return {
+                "response_type": "answer",
+                "message": "There are no stored tender questions yet. Run question extraction first, then I can fill draft or final answers from a supporting document.",
+                "intermediate_steps": [
+                    "Detected a request to fill tender question answers from document text.",
+                    "No TenderQuestion records exist yet for this tender.",
+                ],
+                "actions": [],
+            }
+        answer_documents = _documents_for_question_answering(tender, selected_document_ids=selected_document_ids)
+        if not answer_documents:
+            return {
+                "response_type": "answer",
+                "message": "Upload or select at least one tender document first, then ask me to fill the question answers from that file.",
+                "intermediate_steps": [
+                    "Detected a request to fill tender question answers from document text.",
+                    "No suitable tender documents were selected or available.",
+                ],
+                "actions": [],
+            }
+        answer_mode = _question_answer_mode(normalized)
+        document_names = [document.original_filename for document in answer_documents]
+        mode_label = "final answers only" if answer_mode == "final_only" else "draft answers"
+        return {
+            "response_type": "proposed_action",
+            "message": (
+                f"I can use {', '.join(document_names[:3])} to fill {mode_label} for the current tender questions. "
+                "Reply with 'confirm' and I will update the question records."
+            ),
+            "intermediate_steps": [
+                "Detected a tender question-answering request in the current tender context.",
+                f"Prepared a {mode_label} update using the selected or most recent tender document text.",
+                f"Questions available: {len(tender.questions)}.",
+            ],
+            "actions": [
+                {
+                    "action_type": "answer_questions_from_documents",
+                    "tender_id": tender.id,
+                    "document_ids": [document.id for document in answer_documents],
+                    "answer_mode": answer_mode,
+                    "requires_confirmation": True,
+                }
+            ],
+        }
+
     if intent_hint == "add_items_from_message" or _heuristic_add_items_request(normalized, message):
         parsed_items = _parse_item_request_lines(message)
         if not parsed_items:
@@ -910,6 +1019,86 @@ def apply_confirmed_action(action: ChatAction, data_dir: Path) -> str:
             }
         )
         return f"Added {created} tender items to {tender.tender_number}. They are ready for review and manual editing."
+    if action.action_type == "answer_questions_from_documents":
+        tender = Tender.query.get(payload.get("tender_id"))
+        if tender is None:
+            raise ValueError("The target tender could not be found.")
+        document_ids = payload.get("document_ids") or []
+        answer_mode = payload.get("answer_mode") or "draft"
+        documents = [document for document in tender.documents if document.id in {int(document_id) for document_id in document_ids}]
+        if not documents:
+            raise ValueError("No supporting tender documents were available for question answering.")
+        if not tender.questions:
+            raise ValueError("There are no tender questions to update.")
+        combined_document_text = "\n\n---\n\n".join(
+            f"Document: {document.original_filename}\n{document.extracted_text.strip()}"
+            for document in documents
+            if document.extracted_text and document.extracted_text.strip()
+        )
+        if not combined_document_text:
+            raise ValueError("The selected tender documents do not contain extracted text yet.")
+        question_prompt = render_prompt(
+            "question_answer_drafting",
+            answer_mode=answer_mode,
+            question_list=_question_list_context(tender),
+            document_text=combined_document_text[:24000],
+        )
+        ollama_url = get_setting("ollama_url")
+        model_name = get_task_model("chat_answering")
+        if not ollama_url or not model_name:
+            raise ValueError("The Ollama URL or chat model is not configured.")
+        client = OllamaClient(ollama_url)
+        parsed, raw_response, error = client.generate_json(model_name, question_prompt)
+        if parsed is None or error is not None:
+            raise ValueError(error or raw_response or "The question-answer drafting model returned invalid JSON.")
+
+        question_index: dict[tuple[str | None, str], TenderQuestion] = {}
+        for question in tender.questions:
+            key = (question.question_number or None, _normalize(question.question_text or ""))
+            question_index[key] = question
+
+        updated = 0
+        for answer_payload in parsed.get("answers", []):
+            question_number = answer_payload.get("question_number") or None
+            question_text = _markdown_text(answer_payload.get("question_text")) or ""
+            question = question_index.get((question_number, _normalize(question_text)))
+            if question is None and question_number:
+                question = next((item for item in tender.questions if (item.question_number or None) == question_number), None)
+            if question is None and question_text:
+                question = next((item for item in tender.questions if _normalize(item.question_text or "") == _normalize(question_text)), None)
+            if question is None:
+                continue
+            suggested_answer = _markdown_text(answer_payload.get("suggested_answer"))
+            answer_text = _markdown_text(answer_payload.get("answer_text"))
+            if answer_mode == "final_only":
+                answer_value = answer_text or suggested_answer
+                if answer_value:
+                    question.answer_text = answer_value
+                    question.answer_status = answer_payload.get("answer_status") or "Answered"
+                    updated += 1
+            else:
+                if suggested_answer:
+                    question.suggested_answer = suggested_answer
+                    updated += 1
+                if answer_text:
+                    question.answer_text = answer_text
+                    question.answer_status = answer_payload.get("answer_status") or "Answered"
+                elif suggested_answer:
+                    question.answer_status = answer_payload.get("answer_status") or "Draft Generated"
+            source_reference = _markdown_text(answer_payload.get("source_reference"))
+            if source_reference:
+                question.source_reference = source_reference
+        action.status = "applied"
+        action.result_json = json.dumps(
+            {
+                "tender_id": tender.id,
+                "redirect_path": f"/tenders/{tender.id}?refreshed={int(datetime.utcnow().timestamp())}#questions",
+                "questions_updated": updated,
+            }
+        )
+        if updated == 0:
+            return f"I checked {len(documents)} document(s), but I could not confidently fill any tender question answers for {tender.tender_number}."
+        return f"Updated {updated} tender question answer field(s) for {tender.tender_number} using {len(documents)} supporting document(s)."
     raise ValueError(f"Unsupported action type: {action.action_type}")
 
 
@@ -930,6 +1119,11 @@ def classify_message_intent(client, model_name: str, message: str, has_upload: b
         return "add_items_from_message", [
             "Matched the message against the local add-items fallback rules.",
             "A tender context is active and item-style lines were found in the message.",
+        ]
+    if has_tender_context and _heuristic_answer_questions_request(normalized):
+        return "answer_questions_from_documents", [
+            "Matched the message against the local question-answering fallback rules.",
+            "A tender context is active and the message asks to fill question answers from document content.",
         ]
     prompt = render_prompt(
         "chat_action_orchestrator",
@@ -956,6 +1150,8 @@ def classify_message_intent(client, model_name: str, message: str, has_upload: b
     if intent == "create_tender_from_text" and not has_upload and not has_tender_context and confidence in {"high", "medium"}:
         return intent, steps
     if intent == "add_items_from_message" and has_tender_context and confidence in {"high", "medium"}:
+        return intent, steps
+    if intent == "answer_questions_from_documents" and has_tender_context and confidence in {"high", "medium"}:
         return intent, steps
     if intent == "confirm_action" and confidence in {"high", "medium"}:
         return intent, steps

@@ -52,6 +52,24 @@ PROMPT_FILES = {
             "Tender text:\n{{tender_text}}\n"
         ),
     },
+    "question_answer_drafting": {
+        "filename": "question_answer_drafting.md",
+        "title": "Question Answer Drafting",
+        "description": "Instruction file used to draft or fill tender question answers from selected tender document text.",
+        "default_content": (
+            "# Question Answer Drafting Prompt\n\n"
+            "You are filling tender question answers using only the supplied tender question list and supporting document text.\n"
+            "Return JSON only with an `answers` array.\n"
+            "Each answer object should contain: question_number, question_text, suggested_answer, answer_text, answer_status, source_reference.\n"
+            "Write `suggested_answer` and `answer_text` as markdown where appropriate.\n"
+            "If the mode is `draft`, prefer `suggested_answer` unless the source text clearly provides a final answer.\n"
+            "If the mode is `final_only`, write the best supported answer into `answer_text` and leave `suggested_answer` null unless it helps explain uncertainty.\n"
+            "Do not invent answers. If the source text does not support an answer, return null values for that question.\n\n"
+            "Mode: {{answer_mode}}\n\n"
+            "Questions:\n{{question_list}}\n\n"
+            "Supporting document text:\n{{document_text}}\n"
+        ),
+    },
     "chat_action_orchestrator": {
         "filename": "chat_action_orchestrator.md",
         "title": "Chat Action Orchestrator",
@@ -60,10 +78,11 @@ PROMPT_FILES = {
             "# Chat Action Orchestrator Prompt\n\n"
             "Classify the user's message into one of these intents and return JSON only with keys "
             "`intent`, `confidence`, and `reason`.\n"
-            "Allowed intents: create_tender_from_upload, create_tender_from_text, add_items_from_message, confirm_action, none.\n"
+            "Allowed intents: create_tender_from_upload, create_tender_from_text, add_items_from_message, answer_questions_from_documents, confirm_action, none.\n"
             "Use `create_tender_from_upload` only if the user appears to want a new tender created from an uploaded document.\n"
             "Use `create_tender_from_text` only if the user appears to want a new tender created from pasted text in the chat itself.\n"
             "Use `add_items_from_message` only if the user is asking to turn a typed list of items into tender items on the current tender.\n"
+            "Use `answer_questions_from_documents` only if the user is asking to fill tender question answers from the uploaded or selected supporting document text.\n"
             "Use `confirm_action` only if the user is clearly confirming a previously proposed action.\n\n"
             "User message: {{user_message}}\n"
             "Has upload available: {{has_upload}}\n"
