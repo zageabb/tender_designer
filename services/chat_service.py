@@ -148,6 +148,14 @@ def _heuristic_answer_questions_request(normalized: str) -> bool:
             "fill in the questions",
             "fill in the answers",
             "fill answers",
+            "update the answers",
+            "update answers",
+            "provide the answers",
+            "these are the answers",
+            "use this file to fill answers",
+            "use this file to update answers",
+            "use this document to fill answers",
+            "use this document to update answers",
             "draft answers",
             "draft the answers",
             "use this file to answer",
@@ -161,7 +169,23 @@ def _heuristic_answer_questions_request(normalized: str) -> bool:
 
 
 def _question_answer_mode(normalized: str) -> str:
-    if any(phrase in normalized for phrase in {"answers only", "final answers", "answer only", "fill final answers"}):
+    if any(
+        phrase in normalized
+        for phrase in {
+            "answers only",
+            "final answers",
+            "answer only",
+            "fill final answers",
+            "update the answers",
+            "update answers",
+            "provide the answers",
+            "these are the answers",
+            "fill in the answers",
+            "use this file to update answers",
+            "use this document to update answers",
+            "add answers only",
+        }
+    ):
         return "final_only"
     return "draft"
 
