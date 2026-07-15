@@ -44,7 +44,10 @@ PROMPT_FILES = {
             "# Question Extraction Prompt\n\n"
             "You are extracting genuine tender questions and written response requirements.\n"
             "Return JSON only with a `questions` array.\n"
-            "Each question should contain: question_number, section, question_text, source_reference.\n"
+            "Each question should contain: question_number, section, question_text, suggested_answer, answer_text, source_reference.\n"
+            "Store `question_text`, `suggested_answer`, and `answer_text` as markdown strings where appropriate.\n"
+            "Use `suggested_answer` for a draft response when the tender provides enough context to prepare one.\n"
+            "Use `answer_text` only when the document already contains a final answer; otherwise return null.\n"
             "Exclude statements that are not true questions or explicit response requirements.\n\n"
             "Tender text:\n{{tender_text}}\n"
         ),

@@ -30,6 +30,13 @@ def _log_run(tender_id: int, task_type: str, model_name: str, prompt: str, respo
     )
 
 
+def _markdown_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = str(value).strip()
+    return cleaned or None
+
+
 def _parse_date_value(value: str | None) -> date | None:
     if not value:
         return None
@@ -159,14 +166,25 @@ def extract_tender_questions(
             return False, error or raw_response
     created = 0
     for question_payload in parsed.get("questions", []):
+        question_text = _markdown_text(question_payload.get("question_text")) or ""
+        suggested_answer = _markdown_text(question_payload.get("suggested_answer"))
+        answer_text = _markdown_text(question_payload.get("answer_text"))
+        if answer_text:
+            answer_status = "Answered"
+        elif suggested_answer:
+            answer_status = "Draft Generated"
+        else:
+            answer_status = "Unanswered"
         db.session.add(
             TenderQuestion(
                 tender=tender,
                 question_number=question_payload.get("question_number"),
                 section=question_payload.get("section"),
-                question_text=question_payload.get("question_text") or "",
-                source_reference=question_payload.get("source_reference"),
-                answer_status="Draft Generated",
+                question_text=question_text,
+                suggested_answer=suggested_answer,
+                answer_text=answer_text,
+                source_reference=_markdown_text(question_payload.get("source_reference")),
+                answer_status=question_payload.get("answer_status") or answer_status,
             )
         )
         created += 1

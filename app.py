@@ -14,6 +14,7 @@ from routes.settings import settings_bp
 from routes.tender_emails import tender_emails_bp
 from routes.tenders import tenders_bp
 from services.extraction_jobs import start_extraction_worker
+from services.markdown_tools import render_markdown_html
 from services.settings_service import ensure_default_settings
 
 
@@ -29,6 +30,7 @@ def create_app() -> Flask:
 
         db.create_all()
         ensure_default_settings(db)
+    app.jinja_env.globals["render_markdown_html"] = render_markdown_html
 
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(tenders_bp)
