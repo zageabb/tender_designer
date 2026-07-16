@@ -17,6 +17,7 @@ computer_finder_bp = Blueprint("computer_finder", __name__, url_prefix="/compute
 
 COMPUTER_FINDER_SETTING_KEYS = [
     "computer_finder_model",
+    "computer_finder_searxng_url",
     "computer_finder_results_per_domain",
     "computer_finder_max_pages_to_read",
     "computer_finder_allowed_domains",
@@ -46,7 +47,7 @@ def search():
     try:
         result = find_computer_for_spec(computer_spec)
     except ComputerFinderConfigError as exc:
-        return jsonify({"ok": False, "message": str(exc)}), 400
+        return jsonify({"ok": False, "message": str(exc), "steps": getattr(exc, "steps", [])}), 400
     except Exception as exc:
         return jsonify({"ok": False, "message": f"Computer search failed: {exc}"}), 500
     return jsonify(

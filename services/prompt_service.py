@@ -116,6 +116,8 @@ PROMPT_FILES = {
             "You are planning web searches for a hardware procurement assistant.\n"
             "Return JSON only with a `queries` array containing 2 to 4 concise search queries.\n"
             "Do not include `site:` filters; the application adds those for each configured website.\n"
+            "Do not include configured domain names such as `dell.com`, `hp.com`, or `lenovo.com` in the query text.\n"
+            "Do not use words like `search` or `site`.\n"
             "Prefer product family, business model, workstation, laptop, desktop, datasheet, configurable, and warranty terms when useful.\n\n"
             "Procurement market: {{market_context}}\n\n"
             "Search websites configured for this workflow:\n{{allowed_domains}}\n\n"

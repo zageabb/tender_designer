@@ -70,6 +70,10 @@ DEFAULT_SETTINGS = {
         "value": "llama3.2",
         "description": "Ollama model used to plan searches and recommend a computer from sourced web results.",
     },
+    "computer_finder_searxng_url": {
+        "value": "http://192.168.1.249:8081",
+        "description": "Optional SearXNG base URL used as the primary web search provider for Computer Finder.",
+    },
     "computer_finder_results_per_domain": {
         "value": "3",
         "description": "Maximum site-restricted search results to collect from each configured website.",

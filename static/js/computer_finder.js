@@ -69,8 +69,15 @@ if (computerFinderForm) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ spec }),
       });
-      const payload = await response.json();
+      const responseText = await response.text();
+      let payload = {};
+      try {
+        payload = responseText ? JSON.parse(responseText) : {};
+      } catch (parseError) {
+        payload = { message: responseText || parseError.message };
+      }
       if (!response.ok || !payload.ok) {
+        renderComputerFinderSteps(payload.steps || []);
         throw new Error(payload.message || "Computer search failed.");
       }
       computerFinderResult.innerHTML = renderComputerFinderMarkdown(payload.message || "");
@@ -111,7 +118,13 @@ if (computerFinderSettingsForm) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const result = await response.json();
+      const responseText = await response.text();
+      let result = {};
+      try {
+        result = responseText ? JSON.parse(responseText) : {};
+      } catch (parseError) {
+        result = { message: responseText || parseError.message };
+      }
       if (!response.ok || !result.ok) {
         throw new Error(result.message || "Could not save settings.");
       }
