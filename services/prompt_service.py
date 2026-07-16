@@ -131,7 +131,8 @@ PROMPT_FILES = {
         "default_content": (
             "# Computer Finder Recommendation Prompt\n\n"
             "You are a hardware procurement assistant. The user provided a computer specification and the application has collected "
-            "site-restricted web results from the configured websites. Use only the supplied search results as evidence.\n\n"
+            "web results from SearXNG. Results may include exact-query results and configured-domain refinement results. "
+            "Use only the supplied search results as evidence.\n\n"
             "Current date: {{current_date}}\n"
             "Default procurement market: {{market_context}}\n\n"
             "Search websites configured for this workflow:\n{{allowed_domains}}\n\n"

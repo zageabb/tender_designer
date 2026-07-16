@@ -74,6 +74,10 @@ DEFAULT_SETTINGS = {
         "value": "http://192.168.1.249:8081",
         "description": "Optional SearXNG base URL used as the primary web search provider for Computer Finder.",
     },
+    "computer_finder_searxng_engines": {
+        "value": "google,bing",
+        "description": "Optional comma-separated SearXNG engines for Computer Finder searches. Leave blank to use SearXNG defaults.",
+    },
     "computer_finder_results_per_domain": {
         "value": "3",
         "description": "Maximum site-restricted search results to collect from each configured website.",

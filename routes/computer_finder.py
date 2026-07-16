@@ -18,6 +18,7 @@ computer_finder_bp = Blueprint("computer_finder", __name__, url_prefix="/compute
 COMPUTER_FINDER_SETTING_KEYS = [
     "computer_finder_model",
     "computer_finder_searxng_url",
+    "computer_finder_searxng_engines",
     "computer_finder_results_per_domain",
     "computer_finder_max_pages_to_read",
     "computer_finder_allowed_domains",

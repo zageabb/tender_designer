@@ -31,6 +31,7 @@ class ComputerFinderConfig:
     ollama_url: str
     model: str
     searxng_url: str
+    searxng_engines: str
     search_results_per_domain: int
     max_pages_to_read: int
     allowed_domains: list[str]
@@ -77,6 +78,7 @@ def get_computer_finder_config() -> ComputerFinderConfig:
         ollama_url=ollama_url,
         model=(get_setting("computer_finder_model") or get_task_model("chat_answering") or "llama3.2").strip(),
         searxng_url=(get_setting("computer_finder_searxng_url") or "").strip().rstrip("/"),
+        searxng_engines=(get_setting("computer_finder_searxng_engines") or "").strip(),
         search_results_per_domain=_int_setting("computer_finder_results_per_domain", 3, minimum=1, maximum=8),
         max_pages_to_read=_int_setting("computer_finder_max_pages_to_read", 8, minimum=1, maximum=20),
         allowed_domains=allowed_domains,
@@ -94,11 +96,11 @@ def find_computer_for_spec(computer_spec: str, config: ComputerFinderConfig | No
     config = config or get_computer_finder_config()
     client = OllamaClient(config.ollama_url)
     planned_queries, planning_steps = _plan_queries(client, config.model, computer_spec, config)
-    search_results, search_steps = _collect_search_results(planned_queries, config)
+    search_results, search_steps = _collect_search_results(computer_spec, planned_queries, config)
     page_context, page_steps = _build_page_context(search_results, config)
     if not page_context:
         raise ComputerFinderConfigError(
-            "SearXNG is connected, but it returned no readable product results from the configured websites. "
+            "SearXNG is connected, but it returned no readable product results for the exact query or configured-domain refinement. "
             "Check the search diagnostics below; the likely cause is blocked or rate-limited upstream search engines.",
             [*planning_steps, *search_steps, *page_steps],
         )
@@ -179,12 +181,12 @@ def _fallback_queries(computer_spec: str) -> list[str]:
     ]
 
 
-def _collect_search_results(queries: list[str], config: ComputerFinderConfig) -> tuple[list[dict], list[str]]:
+def _collect_search_results(computer_spec: str, queries: list[str], config: ComputerFinderConfig) -> tuple[list[dict], list[str]]:
     results: list[dict] = []
     seen_urls: set[str] = set()
     steps: list[str] = []
     if config.searxng_url:
-        searxng_results, searxng_steps = _collect_searxng_results(queries, config, seen_urls)
+        searxng_results, searxng_steps = _collect_searxng_results(computer_spec, queries, config, seen_urls)
         results.extend(searxng_results)
         steps.extend(searxng_steps)
         return results, [*steps, "Public search-engine fallback skipped because SearXNG is configured."]
@@ -228,6 +230,7 @@ def _collect_search_results(queries: list[str], config: ComputerFinderConfig) ->
 
 
 def _collect_searxng_results(
+    computer_spec: str,
     queries: list[str],
     config: ComputerFinderConfig,
     seen_urls: set[str],
@@ -236,12 +239,17 @@ def _collect_searxng_results(
     attempted_queries: list[str] = []
     unresponsive: dict[str, set[str]] = {}
     errors: list[str] = []
+    discarded_low_relevance = 0
     max_results = max(config.max_pages_to_read * 2, 12)
 
-    search_queries = _searxng_query_candidates(queries, config)[:8]
-    for query in search_queries:
+    search_queries = _searxng_query_candidates(computer_spec, queries, config)[:10]
+    exact_results = 0
+    refined_results = 0
+    for query_payload in search_queries:
         if len(results) >= max_results:
             break
+        query = query_payload["query"]
+        strict_domains = query_payload["strict_domains"]
         attempted_queries.append(query)
         try:
             payload = _searxng_search(query, config)
@@ -256,9 +264,18 @@ def _collect_searxng_results(
             url = _normalise_search_url(result.get("url") or "")
             if not url or url in seen_urls:
                 continue
-            if not _domain_allowed(url, config.allowed_domains, config.blocked_domains):
+            if strict_domains and not _domain_allowed(url, config.allowed_domains, config.blocked_domains):
+                continue
+            if not strict_domains and _domain_blocked(url, config.blocked_domains):
+                continue
+            if not strict_domains and not _result_relevant_to_spec(result, computer_spec, config.allowed_domains):
+                discarded_low_relevance += 1
                 continue
             seen_urls.add(url)
+            if strict_domains:
+                refined_results += 1
+            else:
+                exact_results += 1
             results.append(
                 {
                     "title": result.get("title") or urlparse(url).netloc,
@@ -266,6 +283,7 @@ def _collect_searxng_results(
                     "snippet": result.get("content") or result.get("snippet") or "",
                     "provider": "SearXNG",
                     "engine": result.get("engine") or "",
+                    "search_mode": "configured domain refinement" if strict_domains else "exact query",
                 }
             )
             if len(results) >= max_results:
@@ -273,8 +291,9 @@ def _collect_searxng_results(
 
     steps = [
         f"SearXNG provider: {config.searxng_url}",
+        f"SearXNG engines: {config.searxng_engines or 'default'}",
         f"SearXNG query attempts: {len(attempted_queries)}.",
-        f"SearXNG collected {len(results)} allowed candidate result(s).",
+        f"SearXNG collected {len(results)} candidate result(s): {exact_results} from the exact query, {refined_results} from configured-domain refinement.",
     ]
     if attempted_queries:
         steps.append("SearXNG tried: " + " | ".join(attempted_queries[:6]) + (" | ..." if len(attempted_queries) > 6 else ""))
@@ -283,36 +302,45 @@ def _collect_searxng_results(
         for engine, reasons in sorted(unresponsive.items()):
             summaries.append(f"{engine} ({', '.join(sorted(reasons))})")
         steps.append("SearXNG unresponsive engines: " + "; ".join(summaries[:8]) + ("; ..." if len(summaries) > 8 else ""))
+    if discarded_low_relevance:
+        steps.append(f"Discarded {discarded_low_relevance} low-relevance exact-query result(s) before asking Ollama.")
     if errors:
         steps.append("SearXNG request errors: " + " | ".join(errors[:3]) + (" | ..." if len(errors) > 3 else ""))
     return results, steps
 
 
-def _searxng_query_candidates(queries: list[str], config: ComputerFinderConfig) -> list[str]:
-    candidates: list[str] = []
+def _searxng_query_candidates(computer_spec: str, queries: list[str], config: ComputerFinderConfig) -> list[dict]:
+    candidates: list[dict] = []
+    seen: set[tuple[str, bool]] = set()
 
-    def add(query: str) -> None:
+    def add(query: str, strict_domains: bool) -> None:
         cleaned = " ".join(query.split())
-        if cleaned and cleaned not in candidates:
-            candidates.append(cleaned)
+        key = (cleaned, strict_domains)
+        if cleaned and key not in seen:
+            seen.add(key)
+            candidates.append({"query": cleaned, "strict_domains": strict_domains})
 
+    add(computer_spec, strict_domains=False)
     for query in queries[:3]:
-        add(query)
+        add(query, strict_domains=False)
     for domain in config.allowed_domains[:8]:
         for query in queries[:2]:
-            add(f"site:{domain} {query}")
+            add(f"site:{domain} {query}", strict_domains=True)
     return candidates
 
 
 def _searxng_search(query: str, config: ComputerFinderConfig) -> dict:
+    params = {
+        "q": query,
+        "format": "json",
+        "safesearch": "0",
+        "language": "all",
+    }
+    if config.searxng_engines:
+        params["engines"] = config.searxng_engines
     response = requests.get(
         f"{config.searxng_url}/search",
-        params={
-            "q": query,
-            "format": "json",
-            "safesearch": "0",
-            "language": "all",
-        },
+        params=params,
         headers={
             **REQUEST_HEADERS,
             "Accept": "application/json",
@@ -372,16 +400,110 @@ def _domain_allowed(url: str, allowed_domains: list[str], blocked_domains: list[
         host = host[4:]
     if not host:
         return False
-    if any(host == blocked or host.endswith(f".{blocked}") for blocked in blocked_domains):
+    if _domain_blocked(url, blocked_domains):
         return False
     return any(host == allowed or host.endswith(f".{allowed}") for allowed in allowed_domains)
+
+
+def _domain_blocked(url: str, blocked_domains: list[str]) -> bool:
+    host = (urlparse(url).netloc or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    if not host:
+        return False
+    return any(host == blocked or host.endswith(f".{blocked}") for blocked in blocked_domains)
+
+
+def _result_relevant_to_spec(result: dict, computer_spec: str, allowed_domains: list[str]) -> bool:
+    title_and_snippet = " ".join(
+        [
+            str(result.get("title") or ""),
+            str(result.get("content") or result.get("snippet") or ""),
+        ]
+    ).lower()
+    url = str(result.get("url") or "")
+    parsed = urlparse(url)
+    host = (parsed.netloc or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    haystack = " ".join([title_and_snippet, url.lower()])
+    if not haystack.strip():
+        return False
+    spec_lower = computer_spec.lower()
+    if any(term in spec_lower for term in ["laptop", "notebook", "screen"]):
+        non_laptop_terms = {
+            "iphone",
+            "ipad",
+            "smartphone",
+            "mobile phone",
+            "cell phone",
+            "youtube",
+            "music video",
+            "wikipedia",
+            "number facts",
+            "number fifteen",
+        }
+        if any(_search_term_present(title_and_snippet, term) or _search_term_present(parsed.path.lower(), term) for term in non_laptop_terms):
+            return False
+    strong_terms = {
+        "laptop",
+        "notebook",
+        "business laptop",
+        "probook",
+        "elitebook",
+        "thinkpad",
+        "latitude",
+        "vostro",
+        "optiplex",
+        "workstation",
+    }
+    spec_terms = {
+        "16gb",
+        "512gb",
+        "ssd",
+        "rj45",
+        "windows 11",
+        "windows 11 pro",
+        "ryzen",
+        "intel",
+        "core i5",
+        "i5",
+        "7530u",
+        "14th gen",
+        "3 year",
+        "warranty",
+    }
+    brand_terms = {domain.split(".")[0] for domain in allowed_domains}
+    score = 0
+    if any(_search_term_present(haystack, term) for term in strong_terms):
+        score += 2
+    score += sum(1 for term in spec_terms if _search_term_present(haystack, term))
+    if any(host == domain or host.endswith(f".{domain}") for domain in allowed_domains):
+        score += 1
+    score += sum(1 for term in brand_terms if term and _search_term_present(title_and_snippet, term))
+    if "laptop" in spec_lower and _search_term_present(haystack, "laptop"):
+        score += 1
+    return score >= 2
+
+
+def _search_term_present(text: str, term: str) -> bool:
+    if not term:
+        return False
+    if re.search(r"[a-z0-9]", term):
+        pattern = r"(?<![a-z0-9])" + r"\s+".join(re.escape(part) for part in term.lower().split()) + r"(?![a-z0-9])"
+        return re.search(pattern, text.lower()) is not None
+    return term.lower() in text.lower()
 
 
 def _build_page_context(search_results: list[dict], config: ComputerFinderConfig) -> tuple[str, list[str]]:
     sections: list[str] = []
     readable_pages = 0
     for index, result in enumerate(search_results[: config.max_pages_to_read], start=1):
-        page_text = _fetch_page_text(result["url"])
+        page_text = ""
+        if result.get("search_mode") == "exact query":
+            page_text = result.get("snippet", "")
+        if not page_text:
+            page_text = _fetch_page_text(result["url"])
         if not page_text:
             page_text = result.get("snippet", "")
         if not page_text:
@@ -393,6 +515,7 @@ def _build_page_context(search_results: list[dict], config: ComputerFinderConfig
                     f"[{index}] {result.get('title') or 'Untitled result'}",
                     f"URL: {result['url']}",
                     f"Search provider: {result.get('provider') or '-'}" + (f" / {result.get('engine')}" if result.get("engine") else ""),
+                    f"Search mode: {result.get('search_mode') or '-'}",
                     f"Snippet: {result.get('snippet') or '-'}",
                     "Readable page text:",
                     page_text[:3500],
@@ -407,7 +530,7 @@ def _build_page_context(search_results: list[dict], config: ComputerFinderConfig
 
 def _fetch_page_text(url: str) -> str:
     try:
-        response = requests.get(url, headers=REQUEST_HEADERS, timeout=20)
+        response = requests.get(url, headers=REQUEST_HEADERS, timeout=8)
         response.raise_for_status()
     except Exception:
         return ""

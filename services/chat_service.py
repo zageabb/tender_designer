@@ -627,6 +627,53 @@ def _summarize_tenders_needing_attention() -> tuple[str, list[str]]:
     ]
 
 
+def _computer_finder_context_response(page_context: dict | None) -> tuple[str, list[str]]:
+    context = page_context or {}
+    spec = _markdown_text(context.get("computer_spec"))
+    status = _markdown_text(context.get("computer_finder_status"))
+    result = _markdown_text(context.get("computer_finder_result"))
+    diagnostics = _markdown_text(context.get("computer_finder_diagnostics"))
+    sources = _markdown_text(context.get("computer_finder_sources"))
+    allowed_domains = _markdown_text(context.get("computer_finder_allowed_domains"))
+    searxng_url = _markdown_text(context.get("computer_finder_searxng_url"))
+    searxng_engines = _markdown_text(context.get("computer_finder_searxng_engines"))
+
+    if not spec and not result and not diagnostics:
+        return (
+            "I’m on the Computer Finder page. Paste a machine specification into the finder panel, run **Search And Match**, "
+            "then ask me to explain the fit, refine the spec, or interpret the search diagnostics.",
+            [
+                "Read the current Computer Finder page context from the UI.",
+                "No spec, search result, or diagnostics were present in the page context yet.",
+            ],
+        )
+
+    lines = ["I’m reading the current Computer Finder page context."]
+    if spec:
+        lines.append(f"\n**Current spec:**\n{spec}")
+    if status:
+        lines.append(f"\n**Finder status:** {status}")
+    if result:
+        lines.append(f"\n**Current result:**\n{result[:1200]}")
+    elif diagnostics:
+        lines.append(f"\n**Current search diagnostics:**\n{diagnostics[:1600]}")
+    if sources:
+        lines.append(f"\n**Visible sources:**\n{sources[:1000]}")
+    if searxng_url or allowed_domains:
+        lines.append("\n**Search setup:**")
+        if searxng_url:
+            lines.append(f"- SearXNG: {searxng_url}")
+        if searxng_engines:
+            lines.append(f"- SearXNG engines: {searxng_engines}")
+        if allowed_domains:
+            lines.append(f"- Allowed domains: {', '.join(allowed_domains.splitlines()[:12])}")
+    lines.append("\nAsk me what to change in the spec, why a search failed, or how to compare a returned model against the requirement.")
+    return "\n".join(lines), [
+        "Read the current Computer Finder page context from the UI.",
+        "Used the spec, finder status, result text, source list, and diagnostics available on the page.",
+    ]
+
+
 def _general_llm_chat_response(message: str, page_context: dict | None, tender: Tender | None, client, model_name: str) -> tuple[str, list[str]]:
     selected_document_ids = page_context.get("selected_document_ids") if page_context else None
     tender_context = _serialize_tender_context(tender)
@@ -733,6 +780,14 @@ def build_chat_response(
                 llm_steps = [f"General chat answer fell back to the simple response: {exc}"]
             else:
                 llm_steps = []
+        if current_page == "computer_finder":
+            message_text, steps = _computer_finder_context_response(page_context)
+            return {
+                "response_type": "answer",
+                "message": message_text,
+                "intermediate_steps": [*steps, *llm_steps] if "llm_steps" in locals() else steps,
+                "actions": [],
+            }
         return {
             "response_type": "answer",
             "message": (
@@ -1162,7 +1217,7 @@ def classify_message_intent(client, model_name: str, message: str, has_upload: b
     if parsed is None or error is not None:
         return None, [f"Intent classification returned invalid JSON: {error or raw_response}"]
     intent = parsed.get("intent")
-    confidence = (parsed.get("confidence") or "").lower()
+    confidence = str(parsed.get("confidence") or "").lower()
     reason = parsed.get("reason") or "No reason supplied."
     steps = [
         f"Intent classifier model: {model_name}",
