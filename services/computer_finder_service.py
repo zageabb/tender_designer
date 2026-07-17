@@ -41,6 +41,15 @@ class ComputerFinderConfig:
     city: str
 
 
+@dataclass(frozen=True)
+class ComputerSearchPlan:
+    queries: list[str]
+    negative_terms: list[str]
+    requirements: dict[str, str]
+    expanded_terms: list[str]
+    source: str
+
+
 def parse_domain_list(value: str | None) -> list[str]:
     domains: list[str] = []
     seen: set[str] = set()
@@ -95,12 +104,12 @@ def find_computer_for_spec(computer_spec: str, config: ComputerFinderConfig | No
 
     config = config or get_computer_finder_config()
     client = OllamaClient(config.ollama_url)
-    planned_queries, planning_steps = _plan_queries(client, config.model, computer_spec, config)
-    search_results, search_steps = _collect_search_results(computer_spec, planned_queries, config)
+    search_plan, planning_steps = _plan_searches(client, config.model, computer_spec, config)
+    search_results, search_steps = _collect_search_results(computer_spec, search_plan, config)
     page_context, page_steps = _build_page_context(search_results, config)
     if not page_context:
         raise ComputerFinderConfigError(
-            "SearXNG is connected, but it returned no readable product results for the exact query or configured-domain refinement. "
+            "SearXNG is connected, but it returned no readable product results for the planner queries or configured-domain refinement. "
             "Check the search diagnostics below; the likely cause is blocked or rate-limited upstream search engines.",
             [*planning_steps, *search_steps, *page_steps],
         )
@@ -146,7 +155,7 @@ def _int_setting(key: str, fallback: int, minimum: int, maximum: int) -> int:
     return max(minimum, min(maximum, value))
 
 
-def _plan_queries(client: OllamaClient, model_name: str, computer_spec: str, config: ComputerFinderConfig) -> tuple[list[str], list[str]]:
+def _plan_searches(client: OllamaClient, model_name: str, computer_spec: str, config: ComputerFinderConfig) -> tuple[ComputerSearchPlan, list[str]]:
     prompt = render_prompt(
         "computer_finder_query_planning",
         computer_spec=computer_spec.strip(),
@@ -156,37 +165,164 @@ def _plan_queries(client: OllamaClient, model_name: str, computer_spec: str, con
     try:
         parsed, raw_response, error = client.generate_json(model_name, prompt)
     except Exception as exc:
-        return _fallback_queries(computer_spec), [f"Query planning used fallback rules because Ollama planning failed: {exc}"]
+        return _fallback_search_plan(computer_spec), [f"Search planning used fallback rules because Ollama planning failed: {exc}"]
     if parsed is None or error is not None:
-        return _fallback_queries(computer_spec), [f"Query planning used fallback rules because the model returned invalid JSON: {error or raw_response}"]
-    queries = []
-    for query in parsed.get("queries", []):
-        cleaned = " ".join(str(query).split())
+        return _fallback_search_plan(computer_spec), [f"Search planning used fallback rules because the model returned invalid JSON: {error or raw_response}"]
+    queries = _normalise_query_list(parsed.get("queries", []), config.allowed_domains, max_items=6)
+    if not queries:
+        return _fallback_search_plan(computer_spec), ["Search planning used fallback rules because no usable queries were returned."]
+    negative_terms = _normalise_term_list(parsed.get("negative_terms", []), max_items=10)
+    if not negative_terms:
+        negative_terms = _default_negative_terms(computer_spec)
+    requirements = _normalise_requirements(parsed.get("requirements", {}))
+    expanded_terms = _normalise_term_list(parsed.get("expanded_terms", []), max_items=12)
+    plan = ComputerSearchPlan(
+        queries=queries,
+        negative_terms=negative_terms,
+        requirements=requirements,
+        expanded_terms=expanded_terms,
+        source="ollama",
+    )
+    steps = [
+        f"Planned {len(plan.queries)} search query path(s) with Ollama search planner.",
+    ]
+    if plan.requirements:
+        summary = "; ".join(f"{key}: {value}" for key, value in list(plan.requirements.items())[:8])
+        steps.append(f"Planner parsed requirements: {summary}.")
+    if plan.expanded_terms:
+        steps.append("Planner expanded search terms: " + ", ".join(plan.expanded_terms[:10]) + ".")
+    if plan.negative_terms:
+        steps.append("Planner excluded common false matches: " + ", ".join(f"-{term}" for term in plan.negative_terms[:10]) + ".")
+    return plan, steps
+
+
+def _fallback_search_plan(computer_spec: str) -> ComputerSearchPlan:
+    spec_lower = computer_spec.lower()
+    display = _first_match(computer_spec, [r"\b\d{2}(?:\.\d)?(?=\s*(?:\"|inch|in|”))", r"\b\d{2}(?:\.\d)?\b"]) or "15.6"
+    ram = _first_match(computer_spec, [r"\b\d+\s*gb\s*ram\b", r"\b\d+\s*gb\b"]) or "16GB"
+    storage = _first_match(computer_spec, [r"\b\d+\s*(?:gb|tb)\s*ssd\b", r"\b\d+\s*(?:gb|tb)\b"]) or "512GB SSD"
+    os_term = "Windows 11 Pro" if "windows 11 pro" in spec_lower else "Windows 11"
+    warranty = "3 year warranty" if "3 year" in spec_lower or "3-year" in spec_lower else "warranty"
+    queries = [
+        f'"{display}" business laptop "{ram}" "{storage}" "{os_term}" Ethernet {warranty}',
+        f'Core i5 14th Gen business laptop "{ram}" "{storage}" "{os_term}" Ethernet {warranty}',
+        f'Ryzen 5 7530U business laptop "{ram}" "{storage}" "{os_term}" Ethernet {warranty}',
+        f'business laptop "{ram}" "{storage}" "{os_term}" Ethernet LAN port Autopilot hardware hash',
+        f'ProBook 450 Latitude 3550 ThinkPad E16 "{ram}" "{storage}" "{os_term}" Ethernet {warranty}',
+        f'TravelMate P2 ExpertBook B1 business laptop "{ram}" "{storage}" "{os_term}" Ethernet {warranty}',
+    ]
+    requirements = {
+        "device": "business laptop" if any(term in spec_lower for term in ["laptop", "screen", "notebook"]) else "business computer",
+        "display": display,
+        "memory": ram,
+        "storage": storage,
+        "os": os_term,
+        "warranty": warranty,
+    }
+    return ComputerSearchPlan(
+        queries=_normalise_query_list(queries, [], max_items=6),
+        negative_terms=_default_negative_terms(computer_spec),
+        requirements=requirements,
+        expanded_terms=["Ethernet", "LAN port", "Windows Autopilot hardware hash", "business laptop", "datasheet", "ProBook", "Latitude", "ThinkPad"],
+        source="fallback",
+    )
+
+
+def _first_match(text: str, patterns: list[str]) -> str:
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.I)
+        if match:
+            return " ".join(match.group(0).replace("”", "").replace("“", "").replace('"', "").split())
+    return ""
+
+
+def _normalise_query_list(value, allowed_domains: list[str], max_items: int) -> list[str]:
+    raw_items = value if isinstance(value, list) else str(value or "").splitlines()
+    queries: list[str] = []
+    for raw_item in raw_items:
+        cleaned = _clean_planned_query(str(raw_item), allowed_domains)
         if cleaned and cleaned not in queries:
             queries.append(cleaned)
-    if not queries:
-        return _fallback_queries(computer_spec), ["Query planning used fallback rules because no usable queries were returned."]
-    return queries[:4], [f"Planned {min(len(queries), 4)} search query path(s) with Ollama."]
+        if len(queries) >= max_items:
+            break
+    return queries
 
 
-def _fallback_queries(computer_spec: str) -> list[str]:
-    terms = re.sub(r"[^a-zA-Z0-9+.# -]", " ", computer_spec)
-    terms = " ".join(terms.split())
-    if len(terms) > 120:
-        terms = terms[:120].rsplit(" ", 1)[0]
-    return [
-        f"{terms} business laptop datasheet",
-        "15.6 business laptop 16GB 512GB RJ45 Windows 11 Pro 3 year warranty",
-        "i5 Ryzen 5 15.6 laptop 16GB 512GB RJ45 Windows 11 Pro",
-    ]
+def _clean_planned_query(query: str, allowed_domains: list[str]) -> str:
+    cleaned = " ".join(str(query or "").split())
+    cleaned = re.sub(r"\bsite:\S+", " ", cleaned, flags=re.I)
+    cleaned = re.sub(r"\b(?:search|find|look up)\s+(?:for\s+)?", " ", cleaned, flags=re.I)
+    for domain in allowed_domains:
+        escaped = re.escape(domain)
+        cleaned = re.sub(rf"\b(?:https?://)?(?:www\.)?{escaped}\b", " ", cleaned, flags=re.I)
+    cleaned = " ".join(cleaned.split())
+    if len(cleaned) > 180:
+        cleaned = cleaned[:180].rsplit(" ", 1)[0]
+    return cleaned.strip()
 
 
-def _collect_search_results(computer_spec: str, queries: list[str], config: ComputerFinderConfig) -> tuple[list[dict], list[str]]:
+def _normalise_term_list(value, max_items: int) -> list[str]:
+    raw_items = value if isinstance(value, list) else str(value or "").splitlines()
+    terms: list[str] = []
+    for raw_item in raw_items:
+        cleaned = str(raw_item or "").strip().strip("-").strip("\"'")
+        cleaned = re.sub(r"\s+", " ", cleaned)
+        if not cleaned or len(cleaned) > 40 or cleaned.lower().startswith("site:"):
+            continue
+        if cleaned.lower() not in [term.lower() for term in terms]:
+            terms.append(cleaned)
+        if len(terms) >= max_items:
+            break
+    return terms
+
+
+def _normalise_requirements(value) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    requirements: dict[str, str] = {}
+    for raw_key, raw_value in value.items():
+        key = re.sub(r"[^a-zA-Z0-9_ -]", "", str(raw_key or "")).strip().replace(" ", "_").lower()
+        if not key:
+            continue
+        if isinstance(raw_value, (list, tuple)):
+            value_text = ", ".join(str(item).strip() for item in raw_value if str(item).strip())
+        else:
+            value_text = str(raw_value or "").strip()
+        value_text = " ".join(value_text.split())
+        if value_text:
+            requirements[key] = value_text[:120]
+        if len(requirements) >= 12:
+            break
+    return requirements
+
+
+def _default_negative_terms(computer_spec: str) -> list[str]:
+    spec_lower = computer_spec.lower()
+    terms = ["iphone", "phone", "tablet", "wikipedia", "youtube", "number facts", "numerology"]
+    if any(term in spec_lower for term in ["laptop", "notebook", "screen"]):
+        terms.extend(["smartphone", "ipad", "mobile phone"])
+    return terms
+
+
+def _query_with_negative_terms(query: str, negative_terms: list[str]) -> str:
+    existing = query.lower()
+    additions: list[str] = []
+    for term in negative_terms[:10]:
+        cleaned = str(term or "").strip().strip("-").strip("\"'")
+        if not cleaned or cleaned.lower() in existing:
+            continue
+        additions.append(f'-"{cleaned}"' if " " in cleaned else f"-{cleaned}")
+    if not additions:
+        return query
+    return " ".join([query, *additions])
+
+
+def _collect_search_results(computer_spec: str, search_plan: ComputerSearchPlan, config: ComputerFinderConfig) -> tuple[list[dict], list[str]]:
     results: list[dict] = []
     seen_urls: set[str] = set()
     steps: list[str] = []
     if config.searxng_url:
-        searxng_results, searxng_steps = _collect_searxng_results(computer_spec, queries, config, seen_urls)
+        searxng_results, searxng_steps = _collect_searxng_results(computer_spec, search_plan, config, seen_urls)
         results.extend(searxng_results)
         steps.extend(searxng_steps)
         return results, [*steps, "Public search-engine fallback skipped because SearXNG is configured."]
@@ -194,10 +330,10 @@ def _collect_search_results(computer_spec: str, queries: list[str], config: Comp
     failed_searches = 0
     for domain in config.allowed_domains:
         domain_results = 0
-        for query in queries:
+        for query in search_plan.queries:
             if domain_results >= config.search_results_per_domain:
                 break
-            site_query = f"site:{domain} {query}"
+            site_query = f"site:{domain} {_query_with_negative_terms(query, search_plan.negative_terms)}"
             try:
                 query_results = _duckduckgo_search(site_query)
             except Exception:
@@ -231,7 +367,7 @@ def _collect_search_results(computer_spec: str, queries: list[str], config: Comp
 
 def _collect_searxng_results(
     computer_spec: str,
-    queries: list[str],
+    search_plan: ComputerSearchPlan,
     config: ComputerFinderConfig,
     seen_urls: set[str],
 ) -> tuple[list[dict], list[str]]:
@@ -242,14 +378,15 @@ def _collect_searxng_results(
     discarded_low_relevance = 0
     max_results = max(config.max_pages_to_read * 2, 12)
 
-    search_queries = _searxng_query_candidates(computer_spec, queries, config)[:10]
-    exact_results = 0
+    search_queries = _searxng_query_candidates(search_plan, config)[:12]
+    planner_results = 0
     refined_results = 0
     for query_payload in search_queries:
         if len(results) >= max_results:
             break
         query = query_payload["query"]
         strict_domains = query_payload["strict_domains"]
+        search_mode = query_payload["search_mode"]
         attempted_queries.append(query)
         try:
             payload = _searxng_search(query, config)
@@ -275,7 +412,7 @@ def _collect_searxng_results(
             if strict_domains:
                 refined_results += 1
             else:
-                exact_results += 1
+                planner_results += 1
             results.append(
                 {
                     "title": result.get("title") or urlparse(url).netloc,
@@ -283,7 +420,7 @@ def _collect_searxng_results(
                     "snippet": result.get("content") or result.get("snippet") or "",
                     "provider": "SearXNG",
                     "engine": result.get("engine") or "",
-                    "search_mode": "configured domain refinement" if strict_domains else "exact query",
+                    "search_mode": search_mode,
                 }
             )
             if len(results) >= max_results:
@@ -293,7 +430,7 @@ def _collect_searxng_results(
         f"SearXNG provider: {config.searxng_url}",
         f"SearXNG engines: {config.searxng_engines or 'default'}",
         f"SearXNG query attempts: {len(attempted_queries)}.",
-        f"SearXNG collected {len(results)} candidate result(s): {exact_results} from the exact query, {refined_results} from configured-domain refinement.",
+        f"SearXNG collected {len(results)} candidate result(s): {planner_results} from planner queries, {refined_results} from configured-domain refinement.",
     ]
     if attempted_queries:
         steps.append("SearXNG tried: " + " | ".join(attempted_queries[:6]) + (" | ..." if len(attempted_queries) > 6 else ""))
@@ -303,29 +440,28 @@ def _collect_searxng_results(
             summaries.append(f"{engine} ({', '.join(sorted(reasons))})")
         steps.append("SearXNG unresponsive engines: " + "; ".join(summaries[:8]) + ("; ..." if len(summaries) > 8 else ""))
     if discarded_low_relevance:
-        steps.append(f"Discarded {discarded_low_relevance} low-relevance exact-query result(s) before asking Ollama.")
+        steps.append(f"Discarded {discarded_low_relevance} low-relevance planner-query result(s) before asking Ollama.")
     if errors:
         steps.append("SearXNG request errors: " + " | ".join(errors[:3]) + (" | ..." if len(errors) > 3 else ""))
     return results, steps
 
 
-def _searxng_query_candidates(computer_spec: str, queries: list[str], config: ComputerFinderConfig) -> list[dict]:
+def _searxng_query_candidates(search_plan: ComputerSearchPlan, config: ComputerFinderConfig) -> list[dict]:
     candidates: list[dict] = []
-    seen: set[tuple[str, bool]] = set()
+    seen: set[tuple[str, bool, str]] = set()
 
-    def add(query: str, strict_domains: bool) -> None:
+    def add(query: str, strict_domains: bool, search_mode: str) -> None:
         cleaned = " ".join(query.split())
-        key = (cleaned, strict_domains)
+        key = (cleaned, strict_domains, search_mode)
         if cleaned and key not in seen:
             seen.add(key)
-            candidates.append({"query": cleaned, "strict_domains": strict_domains})
+            candidates.append({"query": cleaned, "strict_domains": strict_domains, "search_mode": search_mode})
 
-    add(computer_spec, strict_domains=False)
-    for query in queries[:3]:
-        add(query, strict_domains=False)
+    for query in search_plan.queries[:6]:
+        add(_query_with_negative_terms(query, search_plan.negative_terms), strict_domains=False, search_mode="planner query")
     for domain in config.allowed_domains[:8]:
-        for query in queries[:2]:
-            add(f"site:{domain} {query}", strict_domains=True)
+        for query in search_plan.queries[:2]:
+            add(f"site:{domain} {_query_with_negative_terms(query, search_plan.negative_terms)}", strict_domains=True, search_mode="configured domain refinement")
     return candidates
 
 
