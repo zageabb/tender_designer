@@ -287,14 +287,14 @@ def _top_missing_areas(tender: Tender) -> list[str]:
         missing.append("No tender documents have been uploaded.")
     if not tender.items:
         missing.append("No tender items have been extracted or added yet.")
-    if any(item.status in {"New", "Needs Review", "RFQ Required"} for item in tender.items):
+    if any(item.status in {"New", "Needs Review", "RFQ Required", "RFI Required"} for item in tender.items):
         missing.append("Some tender items still need review or supplier pricing.")
     unanswered = [question for question in tender.questions if question.answer_status != "Answered"]
     if unanswered:
         missing.append(f"{len(unanswered)} tender questions are still not marked as answered.")
     pending_rfqs = [rfq for rfq in tender.rfqs if rfq.status in {"Draft", "Downloaded", "Sent Manually"}]
     if pending_rfqs:
-        missing.append(f"{len(pending_rfqs)} RFQs are still awaiting response or completion.")
+        missing.append(f"{len(pending_rfqs)} RFIs are still awaiting response or completion.")
     return missing
 
 
@@ -351,22 +351,22 @@ def _summarize_rfqs(tender: Tender, awaiting_only: bool = False) -> tuple[str, l
         rfqs = [rfq for rfq in rfqs if rfq.status in {"Draft", "Downloaded", "Sent Manually"}]
     if not rfqs:
         if awaiting_only:
-            return "There are no RFQs currently awaiting a supplier response.", [
-                "Checked the current tender's RFQ records.",
-                "No RFQs matched the pending-response statuses.",
+            return "There are no RFIs currently awaiting a supplier response.", [
+                "Checked the current tender's RFI records.",
+                "No RFIs matched the pending-response statuses.",
             ]
-        return "There are no RFQs on this tender yet.", [
-            "Checked the current tender's RFQ records.",
-            "No RFQ entries were found.",
+        return "There are no RFIs on this tender yet.", [
+            "Checked the current tender's RFI records.",
+            "No RFI entries were found.",
         ]
     lines = [
-        f"- RFQ #{rfq.id}: {rfq.subject} ({rfq.status})"
+        f"- RFI #{rfq.id}: {rfq.subject} ({rfq.status})"
         + (f", supplier {rfq.supplier_name}" if rfq.supplier_name else "")
         for rfq in rfqs[:8]
     ]
-    intro = "These RFQs are still awaiting response or completion:\n" if awaiting_only else "Here is the RFQ status summary:\n"
+    intro = "These RFIs are still awaiting response or completion:\n" if awaiting_only else "Here is the RFI status summary:\n"
     return intro + "\n".join(lines), [
-        "Read the tender's RFQ list from the database.",
+        "Read the tender's RFI list from the database.",
         "Included supplier and current workflow status.",
     ]
 
@@ -939,11 +939,11 @@ def build_chat_response(
             "message": (
                 f"Tender {tender.tender_number} for {tender.customer_name} is currently "
                 f"'{tender.status}'. It has {len(tender.documents)} documents, {len(tender.items)} items, "
-                f"{len(tender.rfqs)} RFQs, and {len(tender.questions)} questions."
+                f"{len(tender.rfqs)} RFIs, and {len(tender.questions)} questions."
             ),
             "intermediate_steps": [
                 "Used the current tender header record.",
-                "Counted linked documents, items, RFQs, and questions for context.",
+                "Counted linked documents, items, RFIs, and questions for context.",
             ],
             "actions": [],
         }

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Edit Tender Email | Tender Designer{% endblock %}
+{% block content %}
+<section class="hero-card mb-4">
+  <div>
+    <span class="eyebrow">Document Email Draft</span>
+    <h1 class="display-title">Edit Tender Email</h1>
+    <p class="hero-copy mb-0">Update the recipient, draft body, status, and notes while keeping the linked attachments.</p>
+  </div>
+</section>
+
+<form method="post" class="card glass-panel">
+  <div class="card-body row g-3">
+    <div class="col-md-6">
+      <label class="form-label">To</label>
+      <input class="form-control" name="recipient_email" value="{{ tender_email.recipient_email or '' }}">
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Status</label>
+      <input class="form-control" name="status" value="{{ tender_email.status or 'Draft' }}">
+    </div>
+    <div class="col-12">
+      <label class="form-label">Subject</label>
+      <input class="form-control" name="subject" value="{{ tender_email.subject }}">
+    </div>
+    <div class="col-12">
+      <label class="form-label">Body</label>
+      <textarea class="form-control" name="body_text" rows="12">{{ tender_email.body_text or '' }}</textarea>
+    </div>
+    <div class="col-12">
+      <label class="form-label">Notes</label>
+      <textarea class="form-control" name="notes" rows="4">{{ tender_email.notes or '' }}</textarea>
+    </div>
+    <div class="col-12">
+      <label class="form-label">Attached Documents</label>
+      <div class="small text-muted mb-2">Attachments stay linked to this draft and will be included when the `.eml` is regenerated.</div>
+      <ul class="mb-0">
+        {% for document in documents %}
+        <li>{{ document.original_filename }} <span class="text-muted">({{ document.file_type }})</span></li>
+        {% else %}
+        <li class="text-muted">No attached documents recorded.</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  <div class="card-footer d-flex justify-content-between">
+    <a class="btn btn-outline-secondary" href="{{ url_for('tender_emails.view_tender_email', tender_email_id=tender_email.id) }}">Back to Draft</a>
+    <button class="btn btn-primary" type="submit">Save Draft</button>
+  </div>
+</form>
+{% endblock %}

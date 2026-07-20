@@ -130,7 +130,7 @@ def _render_line_items_table(lines: list[dict]) -> str:
 
 def build_rfq_email_text(tender: Tender, supplier_name: str, lines: list[dict]) -> tuple[str, str]:
     signature = get_setting("default_email_signature", "") or ""
-    subject = f"RFQ - {tender.tender_number} - {tender.customer_name}"
+    subject = f"RFI - {tender.tender_number} - {tender.customer_name}"
     tender_reference = tender.tender_number
     if tender.title:
         tender_reference = f"{tender_reference} - {tender.title}"

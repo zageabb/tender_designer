@@ -10,7 +10,7 @@
   </div>
   <div class="hero-actions">
     <a class="btn btn-outline-dark btn-lg" href="{{ url_for('tenders.edit_tender', tender_id=tender.id) }}">Edit Tender</a>
-    <a class="btn btn-primary btn-lg" href="{{ url_for('rfqs.create_rfq', tender_id=tender.id) }}">Create RFQ</a>
+    <a class="btn btn-primary btn-lg" href="{{ url_for('rfqs.create_rfq', tender_id=tender.id) }}">Create RFI</a>
     <form method="post" action="{{ url_for('tenders.delete_tender', tender_id=tender.id) }}" onsubmit="return confirm('Delete tender {{ tender.tender_number }}? This cannot be undone.');">
       <button class="btn btn-outline-danger btn-lg" type="submit">Delete Tender</button>
     </form>
@@ -41,14 +41,14 @@
 <div class="row g-3 mb-4">
   <div class="col-md-6 col-xl-3"><div class="card metric-card h-100"><div class="card-body"><div class="stat-label">Documents</div><div class="stat-value">{{ tender.documents|length }}</div></div></div></div>
   <div class="col-md-6 col-xl-3"><div class="card metric-card h-100"><div class="card-body"><div class="stat-label">Items</div><div class="stat-value">{{ tender.items|length }}</div></div></div></div>
-  <div class="col-md-6 col-xl-3"><div class="card metric-card h-100"><div class="card-body"><div class="stat-label">RFQs</div><div class="stat-value">{{ tender.rfqs|length }}</div></div></div></div>
+  <div class="col-md-6 col-xl-3"><div class="card metric-card h-100"><div class="card-body"><div class="stat-label">RFIs</div><div class="stat-value">{{ tender.rfqs|length }}</div></div></div></div>
   <div class="col-md-6 col-xl-3"><div class="card metric-card h-100"><div class="card-body"><div class="stat-label">Questions</div><div class="stat-value">{{ tender.questions|length }}</div></div></div></div>
 </div>
 
 <div class="card glass-panel mb-4" id="rfqs">
   <div class="card-header d-flex justify-content-between align-items-center">
-    <span>RFQs</span>
-    <span class="text-muted small">Each RFQ stays linked to tender {{ tender.tender_number }}</span>
+    <span>RFIs</span>
+    <span class="text-muted small">Each RFI stays linked to tender {{ tender.tender_number }}</span>
   </div>
   <div class="table-responsive">
     <table class="table align-middle mb-0">
@@ -62,16 +62,17 @@
           <td><span class="badge text-bg-light">{{ rfq.status }}</span></td>
           <td>
             <div class="d-flex gap-2 flex-wrap">
-              <a class="btn btn-sm btn-outline-primary" href="{{ url_for('rfqs.view_rfq', rfq_id=rfq.id) }}">Open RFQ</a>
+              <a class="btn btn-sm btn-outline-primary" href="{{ url_for('rfqs.view_rfq', rfq_id=rfq.id) }}">Open RFI</a>
+              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('rfqs.edit_rfq', rfq_id=rfq.id) }}">Edit</a>
               <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('rfqs.download_rfq', rfq_id=rfq.id) }}">Download .eml</a>
-              <form method="post" action="{{ url_for('rfqs.delete_rfq', rfq_id=rfq.id) }}" onsubmit="return confirm('Delete RFQ {{ rfq.subject }}? This will remove the RFQ draft and its generated email file.');">
-                <button class="btn btn-sm btn-outline-danger" type="submit">Delete RFQ</button>
+              <form method="post" action="{{ url_for('rfqs.delete_rfq', rfq_id=rfq.id) }}" onsubmit="return confirm('Delete RFI {{ rfq.subject }}? This will remove the RFI draft and its generated email file.');">
+                <button class="btn btn-sm btn-outline-danger" type="submit">Delete RFI</button>
               </form>
             </div>
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="5" class="text-muted">No RFQs created for this tender yet.</td></tr>
+        <tr><td colspan="5" class="text-muted">No RFIs created for this tender yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -96,6 +97,7 @@
           <td>
             <div class="d-flex gap-2 flex-wrap">
               <a class="btn btn-sm btn-outline-primary" href="{{ url_for('tender_emails.view_tender_email', tender_email_id=tender_email.id) }}">Open</a>
+              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('tender_emails.edit_tender_email', tender_email_id=tender_email.id) }}">Edit</a>
               <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('tender_emails.download_tender_email', tender_email_id=tender_email.id) }}">Download .eml</a>
               <form method="post" action="{{ url_for('tender_emails.delete_tender_email', tender_email_id=tender_email.id) }}" onsubmit="return confirm('Delete tender email draft {{ tender_email.subject }}? This will remove the draft and its generated email file.');">
                 <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>

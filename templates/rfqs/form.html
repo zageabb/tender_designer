@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Create RFQ | Tender Designer{% endblock %}
+{% block title %}Create RFI | Tender Designer{% endblock %}
 {% block content %}
 <section class="hero-card mb-4">
   <div>
     <span class="eyebrow">Supplier Outreach</span>
-    <h1 class="display-title">Create RFQ</h1>
+    <h1 class="display-title">Create RFI</h1>
     <p class="hero-copy mb-0">Select the lines you want to price and generate a ready-to-send `.eml` draft linked to tender {{ tender.tender_number }}.</p>
   </div>
   <div class="hero-metric">
@@ -25,7 +25,7 @@
         <input class="form-control" name="supplier_email">
       </div>
       <div class="col-12">
-        <div class="small text-muted">The RFQ body will be generated from the configurable template on the Settings screen.</div>
+        <div class="small text-muted">The RFI body will be generated from the configurable template on the Settings screen.</div>
       </div>
     </div>
 
@@ -56,12 +56,12 @@
       {% endif %}
     </div>
     {% else %}
-    <p class="text-muted mb-0">Add or extract items before creating an RFQ.</p>
+    <p class="text-muted mb-0">Add or extract items before creating an RFI.</p>
     {% endfor %}
   </div>
   <div class="card-footer d-flex justify-content-between">
     <a class="btn btn-outline-secondary" href="{{ url_for('tenders.detail_tender', tender_id=tender.id) }}">Back to Tender</a>
-    <button class="btn btn-primary" type="submit">Generate RFQ</button>
+    <button class="btn btn-primary" type="submit">Generate RFI</button>
   </div>
 </form>
 {% endblock %}

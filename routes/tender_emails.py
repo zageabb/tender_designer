@@ -6,7 +6,7 @@ from flask import Blueprint, current_app, flash, redirect, render_template, requ
 
 from database import db
 from models import Tender, TenderDocument, TenderEmail
-from services.tender_email_service import build_tender_email_defaults, create_tender_email_draft
+from services.tender_email_service import build_tender_email_defaults, create_tender_email_draft, write_tender_email_eml
 
 
 tender_emails_bp = Blueprint("tender_emails", __name__, url_prefix="/tender-emails")
@@ -93,6 +93,44 @@ def view_tender_email(tender_email_id: int):
         "tender_emails/view.html",
         tender_email=tender_email,
         chat_context={"page": "tender_email_view", "tender_id": tender_email.tender_id},
+    )
+
+
+@tender_emails_bp.route("/<int:tender_email_id>/edit", methods=["GET", "POST"])
+def edit_tender_email(tender_email_id: int):
+    tender_email = TenderEmail.query.get_or_404(tender_email_id)
+    documents = [link.tender_document for link in tender_email.documents]
+    if request.method == "POST":
+        tender_email.recipient_email = request.form.get("recipient_email", "").strip() or None
+        tender_email.subject = request.form.get("subject", "").strip() or tender_email.subject
+        tender_email.body_text = request.form.get("body_text", "").strip() or ""
+        tender_email.status = request.form.get("status", "").strip() or "Draft"
+        tender_email.notes = request.form.get("notes", "").strip() or None
+        try:
+            email_path = write_tender_email_eml(
+                current_app.config["DATA_DIR"],
+                tender_email.tender,
+                tender_email,
+                documents,
+            )
+        except FileNotFoundError as exc:
+            db.session.rollback()
+            flash(str(exc), "danger")
+            return render_template(
+                "tender_emails/edit.html",
+                tender_email=tender_email,
+                documents=documents,
+                chat_context={"page": "tender_email_edit", "tender_id": tender_email.tender_id},
+            )
+        tender_email.eml_file_path = str(email_path)
+        db.session.commit()
+        flash("Tender email draft updated.", "success")
+        return redirect(url_for("tender_emails.view_tender_email", tender_email_id=tender_email.id))
+    return render_template(
+        "tender_emails/edit.html",
+        tender_email=tender_email,
+        documents=documents,
+        chat_context={"page": "tender_email_edit", "tender_id": tender_email.tender_id},
     )
 
 

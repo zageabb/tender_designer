@@ -30,7 +30,7 @@ TENDER_STATUS_OPTIONS = [
     "Metadata Extracted",
     "Items Extracted",
     "Ready For Review",
-    "RFQ Required",
+    "RFI Required",
     "Quoted",
     "Submitted",
     "Awarded",
@@ -41,7 +41,7 @@ TENDER_STATUS_OPTIONS = [
 ITEM_STATUS_OPTIONS = [
     "New",
     "Needs Review",
-    "RFQ Required",
+    "RFI Required",
     "Quoted",
     "Ready To Order",
     "Ordered",

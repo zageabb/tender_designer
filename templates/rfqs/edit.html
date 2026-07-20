@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Edit RFI | Tender Designer{% endblock %}
+{% block content %}
+<section class="hero-card mb-4">
+  <div>
+    <span class="eyebrow">Supplier Outreach</span>
+    <h1 class="display-title">Edit RFI</h1>
+    <p class="hero-copy mb-0">Update supplier details, email content, status, and internal notes for this RFI draft.</p>
+  </div>
+</section>
+
+<form method="post" class="card glass-panel">
+  <div class="card-body row g-3">
+    <div class="col-md-6">
+      <label class="form-label">Supplier Name</label>
+      <input class="form-control" name="supplier_name" value="{{ rfq.supplier_name or '' }}">
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Supplier Email</label>
+      <input class="form-control" name="supplier_email" value="{{ rfq.supplier_email or '' }}">
+    </div>
+    <div class="col-md-8">
+      <label class="form-label">Subject</label>
+      <input class="form-control" name="subject" value="{{ rfq.subject }}">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Status</label>
+      <input class="form-control" name="status" value="{{ rfq.status or 'Draft' }}">
+    </div>
+    <div class="col-12">
+      <label class="form-label">Email Body</label>
+      <textarea class="form-control" name="introduction_text" rows="12">{{ rfq.introduction_text or '' }}</textarea>
+    </div>
+    <div class="col-12">
+      <label class="form-label">Notes</label>
+      <textarea class="form-control" name="notes" rows="4">{{ rfq.notes or '' }}</textarea>
+    </div>
+  </div>
+  <div class="card-footer d-flex justify-content-between">
+    <a class="btn btn-outline-secondary" href="{{ url_for('rfqs.view_rfq', rfq_id=rfq.id) }}">Back to RFI</a>
+    <button class="btn btn-primary" type="submit">Save RFI</button>
+  </div>
+</form>
+{% endblock %}

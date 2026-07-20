@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from flask import Blueprint, current_app, flash, redirect, render_template, send_file, url_for
+from flask import Blueprint, current_app, flash, redirect, render_template, request, send_file, url_for
 
 from database import db
 from models import RFQ, Tender
-from services.rfq_service import create_rfq_for_selection
+from services.rfq_service import create_rfq_for_selection, write_rfq_eml
 
 
 rfqs_bp = Blueprint("rfqs", __name__, url_prefix="/rfqs")
@@ -23,7 +23,7 @@ def create_rfq(tender_id: int):
         selected_item_ids = request.form.getlist("item_ids", type=int)
         selected_sub_item_ids = request.form.getlist("sub_item_ids", type=int)
         if not selected_item_ids and not selected_sub_item_ids:
-            flash("Select at least one item or sub-item for the RFQ.", "warning")
+            flash("Select at least one item or sub-item for the RFI.", "warning")
             return redirect(url_for("rfqs.create_rfq", tender_id=tender.id))
         rfq = create_rfq_for_selection(
             db,
@@ -35,7 +35,7 @@ def create_rfq(tender_id: int):
             selected_sub_item_ids,
         )
         db.session.commit()
-        flash("RFQ created and EML generated.", "success")
+        flash("RFI created and EML generated.", "success")
         return redirect(url_for("rfqs.view_rfq", rfq_id=rfq.id))
     return render_template(
         "rfqs/form.html",
@@ -63,12 +63,43 @@ def view_rfq(rfq_id: int):
     )
 
 
+@rfqs_bp.route("/<int:rfq_id>/edit", methods=["GET", "POST"])
+def edit_rfq(rfq_id: int):
+    rfq = RFQ.query.get_or_404(rfq_id)
+    if request.method == "POST":
+        rfq.supplier_name = request.form.get("supplier_name", "").strip() or None
+        rfq.supplier_email = request.form.get("supplier_email", "").strip() or None
+        rfq.subject = request.form.get("subject", "").strip() or rfq.subject
+        rfq.introduction_text = request.form.get("introduction_text", "").strip() or None
+        rfq.status = request.form.get("status", "").strip() or "Draft"
+        rfq.notes = request.form.get("notes", "").strip() or None
+        rfq_path = write_rfq_eml(
+            current_app.config["DATA_DIR"],
+            rfq.tender,
+            rfq,
+            rfq.introduction_text or "",
+        )
+        rfq.eml_file_path = str(rfq_path)
+        db.session.commit()
+        flash("RFI updated.", "success")
+        return redirect(url_for("rfqs.view_rfq", rfq_id=rfq.id))
+    return render_template(
+        "rfqs/edit.html",
+        rfq=rfq,
+        chat_context={
+            "page": "rfq_edit",
+            "tender_id": rfq.tender_id,
+            "visible_rfq_ids": [rfq.id],
+        },
+    )
+
+
 @rfqs_bp.route("/<int:rfq_id>/download")
 def download_rfq(rfq_id: int):
     rfq = RFQ.query.get_or_404(rfq_id)
     path = Path(rfq.eml_file_path or "")
     if not path.exists():
-        flash("The RFQ EML file is missing.", "danger")
+        flash("The RFI EML file is missing.", "danger")
         return redirect(url_for("rfqs.view_rfq", rfq_id=rfq.id))
     return send_file(path, as_attachment=True, download_name=path.name, mimetype="message/rfc822")
 
@@ -83,5 +114,5 @@ def delete_rfq(rfq_id: int):
     db.session.commit()
     if eml_path and eml_path.exists():
         eml_path.unlink()
-    flash(f"Deleted RFQ: {subject}.", "success")
+    flash(f"Deleted RFI: {subject}.", "success")
     return redirect(url_for("tenders.detail_tender", tender_id=tender_id))
