@@ -73,9 +73,9 @@
         <div class="small text-muted mb-2">To: {{ rfq.supplier_email or "Not set" }}</div>
         {% if rfq.notes %}
         <div class="small text-muted mb-2">Notes</div>
-        <pre class="email-preview mb-3">{{ rfq.notes }}</pre>
+        <div class="markdown-rendered email-preview mb-3">{{ render_markdown_html(rfq.notes) }}</div>
         {% endif %}
-        <pre class="email-preview">{{ rfq.introduction_text }}</pre>
+        <div class="markdown-rendered email-preview">{{ render_markdown_html(rfq.introduction_text) }}</div>
       </div>
     </div>
   </div>

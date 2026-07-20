@@ -16,13 +16,9 @@
   </div>
   <div class="card-body">
     {% if document.extracted_text %}
-      {% if extracted_text_is_markdown %}
-        <div class="markdown-rendered">{{ extracted_text_html }}</div>
-      {% else %}
-        <pre class="email-preview">{{ document.extracted_text }}</pre>
-      {% endif %}
+      <div class="markdown-rendered email-preview">{{ render_markdown_html(document.extracted_text) }}</div>
     {% else %}
-      <pre class="email-preview">{{ document.processing_notes or "No extracted text available." }}</pre>
+      <div class="markdown-rendered email-preview">{{ render_markdown_html(document.processing_notes or "No extracted text available.") }}</div>
     {% endif %}
   </div>
 </div>

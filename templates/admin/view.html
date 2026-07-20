@@ -18,9 +18,16 @@
     <table class="table mb-0">
       <tbody>
         {% for column in inspector.columns %}
+        {% set value = record|attr(column.name) %}
         <tr>
           <th class="w-25">{{ column.name }}</th>
-          <td>{{ record|attr(column.name) }}</td>
+          <td>
+            {% if value is string %}
+            <div class="markdown-rendered">{{ render_markdown_html(value) }}</div>
+            {% else %}
+            {{ value }}
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>

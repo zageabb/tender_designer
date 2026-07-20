@@ -29,9 +29,9 @@
           <td>
             {% if value is string %}
               {% if value|length > 160 %}
-                <div class="text-preview admin-cell-preview" title="{{ value }}">{{ value[:160] }}...</div>
+                <div class="markdown-rendered text-preview admin-cell-preview markdown-preview" title="{{ value }}">{{ render_markdown_html(value[:160] ~ '...') }}</div>
               {% else %}
-                <div class="text-preview admin-cell-preview" title="{{ value }}">{{ value }}</div>
+                <div class="markdown-rendered text-preview admin-cell-preview markdown-preview" title="{{ value }}">{{ render_markdown_html(value) }}</div>
               {% endif %}
             {% else %}
               {{ value }}

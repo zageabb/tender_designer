@@ -62,9 +62,9 @@
         <div class="small text-muted mb-2">To: {{ tender_email.recipient_email or "Not set" }}</div>
         {% if tender_email.notes %}
         <div class="small text-muted mb-2">Notes</div>
-        <pre class="email-preview mb-3">{{ tender_email.notes }}</pre>
+        <div class="markdown-rendered email-preview mb-3">{{ render_markdown_html(tender_email.notes) }}</div>
         {% endif %}
-        <pre class="email-preview">{{ tender_email.body_text }}</pre>
+        <div class="markdown-rendered email-preview">{{ render_markdown_html(tender_email.body_text) }}</div>
       </div>
     </div>
   </div>

@@ -147,7 +147,7 @@
               <td>{{ document.original_filename }}</td>
               <td>{{ document.file_type }}</td>
               <td>{{ "Processed" if document.processed else "Pending" }}</td>
-              <td><div class="text-preview">{{ (document.extracted_text or document.processing_notes or "-")[:160] }}</div></td>
+              <td><div class="markdown-rendered text-preview markdown-preview">{{ render_markdown_html((document.extracted_text or document.processing_notes or "-")[:160]) }}</div></td>
               <td>
                 <div class="d-flex gap-2 flex-wrap">
                   <form method="post" action="{{ url_for('tenders.process_document', document_id=document.id) }}">
@@ -300,9 +300,9 @@
           <td>{{ job.task_type }}</td>
           <td><span class="badge extraction-job-badge status-{{ job.status|lower }}">{{ job.status|title }}</span></td>
           <td>
-            <div class="text-preview">{{ job.document_names_text[:120] or '-' }}</div>
+            <div class="markdown-rendered text-preview markdown-preview">{{ render_markdown_html(job.document_names_text[:120] or '-') }}</div>
           </td>
-          <td><div class="text-preview">{{ (job.error_message or job.summary_message or "-")[:160] }}</div></td>
+          <td><div class="markdown-rendered text-preview markdown-preview">{{ render_markdown_html((job.error_message or job.summary_message or "-")[:160]) }}</div></td>
         </tr>
         {% else %}
         <tr><td colspan="5" class="text-muted">No background extraction jobs yet.</td></tr>
@@ -323,7 +323,7 @@
           <td>{{ run.task_type }}</td>
           <td>{{ run.model_name }}</td>
           <td>{{ "Yes" if run.success else "No" }}</td>
-          <td><div class="text-preview">{{ (run.error_message or run.response or "-")[:160] }}</div></td>
+          <td><div class="markdown-rendered text-preview markdown-preview">{{ render_markdown_html((run.error_message or run.response or "-")[:160]) }}</div></td>
         </tr>
         {% else %}
         <tr><td colspan="4" class="text-muted">No extraction runs logged yet.</td></tr>
