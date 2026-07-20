@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Background Jobs | Admin{% endblock %}
+{% block content %}
+<section class="hero-card mb-4">
+  <div>
+    <span class="eyebrow">Operations</span>
+    <h1 class="display-title">Background jobs</h1>
+    <p class="hero-copy mb-0">Inspect the extraction worker, pause or resume new processing, and cancel or retry individual jobs.</p>
+  </div>
+  <div class="hero-actions">
+    <a class="btn btn-outline-dark btn-lg" href="{{ url_for('admin.index') }}">Back To Admin</a>
+    {% if worker_status.paused %}
+    <form method="post" action="{{ url_for('admin.resume_jobs_worker') }}">
+      <button class="btn btn-primary btn-lg" type="submit">Start Worker</button>
+    </form>
+    {% else %}
+    <form method="post" action="{{ url_for('admin.pause_jobs_worker') }}">
+      <button class="btn btn-outline-danger btn-lg" type="submit">Pause Worker</button>
+    </form>
+    {% endif %}
+  </div>
+</section>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-6 col-xl-2"><div class="card metric-card h-100"><div class="card-body"><div class="stat-label">Worker</div><div class="stat-value">{{ "Alive" if worker_status.alive else "Down" }}</div></div></div></div>
+  <div class="col-md-6 col-xl-2"><div class="card metric-card h-100"><div class="card-body"><div class="stat-label">Mode</div><div class="stat-value">{{ "Paused" if worker_status.paused else "Running" }}</div></div></div></div>
+  <div class="col-md-6 col-xl-2"><div class="card metric-card h-100"><div class="card-body"><div class="stat-label">Queue</div><div class="stat-value">{{ worker_status.queue_size }}</div></div></div></div>
+  <div class="col-md-6 col-xl-2"><div class="card metric-card h-100"><div class="card-body"><div class="stat-label">Active Job</div><div class="stat-value">{{ worker_status.active_job_id or "-" }}</div></div></div></div>
+  <div class="col-md-6 col-xl-2"><div class="card metric-card h-100"><div class="card-body"><div class="stat-label">Queued</div><div class="stat-value">{{ stats.queued }}</div></div></div></div>
+  <div class="col-md-6 col-xl-2"><div class="card metric-card h-100"><div class="card-body"><div class="stat-label">Running</div><div class="stat-value">{{ stats.running }}</div></div></div></div>
+</div>
+
+<div class="card glass-panel mb-4">
+  <div class="card-body d-flex flex-wrap gap-3 align-items-center justify-content-between">
+    <div>
+      <strong>Worker status details</strong>
+      <div class="small text-muted mt-1">
+        {% if worker_status.alive %}
+        The background agent thread is alive.
+        {% else %}
+        The background agent thread is not alive. A restart of the Tender Designer app is recommended.
+        {% endif %}
+        {% if worker_status.paused %}
+        New queued jobs will wait until you start the worker again.
+        {% else %}
+        Queued jobs should move into processing automatically.
+        {% endif %}
+      </div>
+    </div>
+    <a class="btn btn-outline-primary btn-sm" href="{{ url_for('admin.list_records', model_slug='extraction-jobs') }}">Open Raw Job Table</a>
+  </div>
+</div>
+
+<div class="card glass-panel">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span>Recent jobs</span>
+    <span class="text-muted small">Most recent 50 extraction jobs</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Job</th>
+          <th>Tender</th>
+          <th>Task</th>
+          <th>Status</th>
+          <th>Documents</th>
+          <th>Updated</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for job in jobs %}
+        <tr>
+          <td>#{{ job.id }}</td>
+          <td>
+            <div>{{ job.tender.tender_number if job.tender else "Missing tender" }}</div>
+            {% if job.tender %}
+            <a class="small" href="{{ url_for('tenders.detail_tender', tender_id=job.tender_id) }}">Open Tender</a>
+            {% endif %}
+          </td>
+          <td>{{ job.task_type }}</td>
+          <td><span class="badge text-bg-light">{{ job.status }}</span></td>
+          <td><div class="text-preview">{{ job.selected_document_names_json }}</div></td>
+          <td>{{ job.updated_at.strftime('%Y-%m-%d %H:%M:%S') if job.updated_at else "-" }}</td>
+          <td class="text-end">
+            <div class="d-flex gap-2 justify-content-end flex-wrap">
+              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.view_record', model_slug='extraction-jobs', record_id=job.id) }}">View</a>
+              {% if job.status in ['queued', 'running', 'cancelling'] %}
+              <form method="post" action="{{ url_for('admin.cancel_job', job_id=job.id) }}" onsubmit="return confirm('Cancel job #{{ job.id }}? A running LLM call may need to finish first.');">
+                <button class="btn btn-sm btn-outline-danger" type="submit">Cancel</button>
+              </form>
+              {% endif %}
+              {% if job.status in ['failed', 'cancelled'] %}
+              <form method="post" action="{{ url_for('admin.retry_job', job_id=job.id) }}">
+                <button class="btn btn-sm btn-outline-primary" type="submit">Retry</button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="text-muted">No extraction jobs recorded yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

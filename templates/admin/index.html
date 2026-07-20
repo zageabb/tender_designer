@@ -7,6 +7,7 @@
     <h1 class="display-title">Admin workspace</h1>
     <p class="hero-copy mb-0">Correct extraction mistakes, inspect raw records, and keep every downstream workflow trustworthy.</p>
   </div>
+  <a class="btn btn-primary btn-lg" href="{{ url_for('admin.job_dashboard') }}">Background Jobs</a>
 </section>
 <div class="row g-3">
   {% for entry in admin_catalog %}

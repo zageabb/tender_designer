@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
@@ -11,6 +12,7 @@ from models import (
     ChatAction,
     ChatMessage,
     ChatSession,
+    ExtractionJob,
     LLMRunLog,
     RAGChunk,
     RAGDocument,
@@ -23,6 +25,13 @@ from models import (
     TenderItem,
     TenderQuestion,
     TenderSubItem,
+)
+from services.extraction_jobs import (
+    cancel_extraction_job,
+    get_worker_status,
+    pause_extraction_worker,
+    resume_extraction_worker,
+    retry_extraction_job,
 )
 
 
@@ -45,6 +54,7 @@ ADMIN_MODELS = {
     "chat-sessions": ChatSession,
     "chat-messages": ChatMessage,
     "chat-actions": ChatAction,
+    "extraction-jobs": ExtractionJob,
 }
 
 ADMIN_MODEL_META = {
@@ -64,6 +74,7 @@ ADMIN_MODEL_META = {
     "chat-sessions": {"label": "Chat Sessions", "description": "Saved chat contexts per tender or page."},
     "chat-messages": {"label": "Chat Messages", "description": "Persisted user and assistant chat history."},
     "chat-actions": {"label": "Chat Actions", "description": "Proposed and confirmed AI actions awaiting execution or audit."},
+    "extraction-jobs": {"label": "Extraction Jobs", "description": "Queued, running, failed, and cancelled background extraction records."},
 }
 
 
@@ -84,7 +95,11 @@ def _model_meta(slug: str) -> dict:
 
 
 def _is_editable(column) -> bool:
-    return not column.primary_key
+    if column.primary_key:
+        return False
+    if column.name in {"created_at", "updated_at"}:
+        return False
+    return True
 
 
 def _coerce_value(column, raw_value: str):
@@ -97,6 +112,15 @@ def _coerce_value(column, raw_value: str):
         return float(raw_value)
     if python_type is Decimal:
         return Decimal(raw_value)
+    if python_type is date:
+        return datetime.strptime(raw_value, "%Y-%m-%d").date()
+    if python_type is datetime:
+        for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"):
+            try:
+                return datetime.strptime(raw_value, fmt)
+            except ValueError:
+                continue
+        raise ValueError(f"Use a valid datetime for {column.name}.")
     if python_type is bool:
         return raw_value.lower() in {"1", "true", "yes", "on"}
     return raw_value
@@ -116,6 +140,58 @@ def index():
             }
         )
     return render_template("admin/index.html", admin_catalog=admin_catalog, chat_context={"page": "admin_index"})
+
+
+@admin_bp.route("/jobs")
+def job_dashboard():
+    jobs = ExtractionJob.query.order_by(ExtractionJob.created_at.desc()).limit(50).all()
+    worker_status = get_worker_status()
+    stats = {
+        "queued": ExtractionJob.query.filter_by(status="queued").count(),
+        "running": ExtractionJob.query.filter(ExtractionJob.status.in_(["running", "cancelling"])).count(),
+        "completed": ExtractionJob.query.filter_by(status="completed").count(),
+        "failed": ExtractionJob.query.filter_by(status="failed").count(),
+        "cancelled": ExtractionJob.query.filter_by(status="cancelled").count(),
+    }
+    return render_template(
+        "admin/jobs.html",
+        jobs=jobs,
+        worker_status=worker_status,
+        stats=stats,
+        chat_context={"page": "admin_jobs"},
+    )
+
+
+@admin_bp.route("/jobs/worker/pause", methods=["POST"])
+def pause_jobs_worker():
+    pause_extraction_worker()
+    flash("Background extraction worker paused. The current job may still finish first.", "warning")
+    return redirect(url_for("admin.job_dashboard"))
+
+
+@admin_bp.route("/jobs/worker/resume", methods=["POST"])
+def resume_jobs_worker():
+    resume_extraction_worker()
+    flash("Background extraction worker resumed.", "success")
+    return redirect(url_for("admin.job_dashboard"))
+
+
+@admin_bp.route("/jobs/<int:job_id>/cancel", methods=["POST"])
+def cancel_job(job_id: int):
+    job = ExtractionJob.query.get_or_404(job_id)
+    success, message = cancel_extraction_job(job)
+    db.session.commit()
+    flash(message, "warning" if success else "secondary")
+    return redirect(url_for("admin.job_dashboard"))
+
+
+@admin_bp.route("/jobs/<int:job_id>/retry", methods=["POST"])
+def retry_job(job_id: int):
+    job = ExtractionJob.query.get_or_404(job_id)
+    success, message = retry_extraction_job(job)
+    db.session.commit()
+    flash(message, "success" if success else "secondary")
+    return redirect(url_for("admin.job_dashboard"))
 
 
 @admin_bp.route("/<string:model_slug>")

@@ -12,9 +12,18 @@
   <div class="card-body row g-3">
     {% for column in inspector.columns %}
       {% if not column.primary_key %}
+      {% set value = record|attr(column.name) if record else '' %}
       <div class="col-md-6">
         <label class="form-label">{{ column.name }}</label>
-        <input class="form-control" name="{{ column.name }}" value="{{ record|attr(column.name) if record else '' }}">
+        {% if column.type.python_type.__name__ == 'date' %}
+        <input class="form-control" type="date" name="{{ column.name }}" value="{{ value.isoformat() if value else '' }}" {% if not (not column.primary_key and column.name not in ['created_at', 'updated_at']) %}readonly{% endif %}>
+        {% elif column.type.python_type.__name__ == 'datetime' %}
+        <input class="form-control" type="text" name="{{ column.name }}" value="{{ value.strftime('%Y-%m-%d %H:%M:%S') if value else '' }}" {% if not (not column.primary_key and column.name not in ['created_at', 'updated_at']) %}readonly{% endif %}>
+        {% elif value is string and (value|length > 120 or '\n' in value) %}
+        <textarea class="form-control" name="{{ column.name }}" rows="5" {% if not (not column.primary_key and column.name not in ['created_at', 'updated_at']) %}readonly{% endif %}>{{ value }}</textarea>
+        {% else %}
+        <input class="form-control" name="{{ column.name }}" value="{{ value }}" {% if not (not column.primary_key and column.name not in ['created_at', 'updated_at']) %}readonly{% endif %}>
+        {% endif %}
       </div>
       {% endif %}
     {% endfor %}
