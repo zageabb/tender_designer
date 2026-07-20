@@ -28,6 +28,9 @@
   <div class="col-md-6 col-xl-2"><div class="card metric-card h-100"><div class="card-body"><div class="stat-label">Active Job</div><div class="stat-value">{{ worker_status.active_job_id or "-" }}</div></div></div></div>
   <div class="col-md-6 col-xl-2"><div class="card metric-card h-100"><div class="card-body"><div class="stat-label">Queued</div><div class="stat-value">{{ stats.queued }}</div></div></div></div>
   <div class="col-md-6 col-xl-2"><div class="card metric-card h-100"><div class="card-body"><div class="stat-label">Running</div><div class="stat-value">{{ stats.running }}</div></div></div></div>
+  <div class="col-md-6 col-xl-2"><div class="card metric-card h-100"><div class="card-body"><div class="stat-label">Completed</div><div class="stat-value">{{ stats.completed }}</div></div></div></div>
+  <div class="col-md-6 col-xl-2"><div class="card metric-card h-100"><div class="card-body"><div class="stat-label">Failed</div><div class="stat-value">{{ stats.failed }}</div></div></div></div>
+  <div class="col-md-6 col-xl-2"><div class="card metric-card h-100"><div class="card-body"><div class="stat-label">Cancelled</div><div class="stat-value">{{ stats.cancelled }}</div></div></div></div>
 </div>
 
 <div class="card glass-panel mb-4">
@@ -80,8 +83,12 @@
             {% endif %}
           </td>
           <td>{{ job.task_type }}</td>
-          <td><span class="badge text-bg-light">{{ job.status }}</span></td>
-          <td><div class="text-preview">{{ job.selected_document_names_json }}</div></td>
+          <td>
+            <span class="badge {% if job.status == 'completed' %}text-bg-success{% elif job.status in ['failed', 'cancelled'] %}text-bg-danger{% elif job.status == 'cancelling' %}text-bg-warning{% else %}text-bg-light{% endif %}">
+              {{ job.status }}
+            </span>
+          </td>
+          <td><div class="text-preview">{{ job.document_names_text }}</div></td>
           <td>{{ job.updated_at.strftime('%Y-%m-%d %H:%M:%S') if job.updated_at else "-" }}</td>
           <td class="text-end">
             <div class="d-flex gap-2 justify-content-end flex-wrap">

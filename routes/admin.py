@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
+import json
 
 from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
 from sqlalchemy import inspect
@@ -145,6 +146,12 @@ def index():
 @admin_bp.route("/jobs")
 def job_dashboard():
     jobs = ExtractionJob.query.order_by(ExtractionJob.created_at.desc()).limit(50).all()
+    for job in jobs:
+        try:
+            names = json.loads(job.selected_document_names_json or "[]")
+        except json.JSONDecodeError:
+            names = []
+        job.document_names_text = ", ".join(names) if names else "-"
     worker_status = get_worker_status()
     stats = {
         "queued": ExtractionJob.query.filter_by(status="queued").count(),
