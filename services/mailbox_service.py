@@ -376,7 +376,10 @@ def sync_mailbox_folder(data_dir: Path, folder: str) -> dict[str, int]:
         status, data = mailbox.uid("search", None, "ALL")
         if status != "OK":
             raise ValueError("Could not search the mailbox.")
-        uids = [value for value in (data[0] or b"").split() if value][-limit:]
+        uids = [value for value in (data[0] or b"").split() if value]
+        normalized_folder = folder.strip().lower()
+        if normalized_folder not in {"inbox"} and limit > 0:
+            uids = uids[-limit:]
         for uid_bytes in reversed(uids):
             uid = uid_bytes.decode("utf-8", errors="ignore")
             status, fetch_data = mailbox.uid("fetch", uid_bytes, "(RFC822)")

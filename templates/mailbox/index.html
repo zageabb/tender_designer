@@ -54,7 +54,7 @@
       </div>
     </form>
     <div class="small text-muted mt-2">
-      Choose a folder, then sync it to pull the latest messages from that mailbox path.
+      Choose a folder, then sync it. INBOX sync pulls the full inbox history; other folders still use the configured recent-message limit.
     </div>
   </div>
 </div>
@@ -62,7 +62,7 @@
 <div class="card glass-panel">
   <div class="card-header d-flex justify-content-between align-items-center">
     <span>{% if selected_folder %}{{ selected_folder }}{% else %}Recent Mail{% endif %}</span>
-    <span class="text-muted small">Latest 50 synced messages{% if selected_folder %} from this folder{% endif %}</span>
+    <span class="text-muted small">Showing the latest 50 synced records{% if selected_folder %} from this folder{% endif %}</span>
   </div>
   <form method="post" action="{{ url_for('mailbox.bulk_action') }}">
     {% if tender %}<input type="hidden" name="tender_id" value="{{ tender.id }}">{% endif %}
