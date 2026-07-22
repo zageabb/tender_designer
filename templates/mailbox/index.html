@@ -35,6 +35,38 @@
 </div>
 {% endif %}
 
+<div class="row g-3 mb-4">
+  <div class="col-md-6 col-xl-3"><div class="card metric-card h-100"><div class="card-body"><div class="stat-label">Mailbox Worker</div><div class="stat-value">{{ "Alive" if mailbox_worker_status.alive else "Down" }}</div></div></div></div>
+  <div class="col-md-6 col-xl-3"><div class="card metric-card h-100"><div class="card-body"><div class="stat-label">Queue</div><div class="stat-value">{{ mailbox_worker_status.queue_size }}</div></div></div></div>
+  <div class="col-md-6 col-xl-3"><div class="card metric-card h-100"><div class="card-body"><div class="stat-label">Active Sync</div><div class="stat-value">{{ mailbox_worker_status.active_job_id or "-" }}</div></div></div></div>
+  <div class="col-md-6 col-xl-3"><div class="card metric-card h-100"><div class="card-body"><div class="stat-label">Latest Status</div><div class="stat-value">{{ recent_sync_jobs[0].status.title() if recent_sync_jobs else "-" }}</div></div></div></div>
+</div>
+
+<div class="card glass-panel mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span>Recent Mailbox Syncs</span>
+    <span class="text-muted small">Newest 5 jobs</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead><tr><th>ID</th><th>Folder</th><th>Status</th><th>Summary</th><th>Completed</th></tr></thead>
+      <tbody>
+        {% for job in recent_sync_jobs %}
+        <tr>
+          <td>{{ job.id }}</td>
+          <td>{{ job.mailbox_folder }}</td>
+          <td><span class="badge text-bg-light">{{ job.status }}</span></td>
+          <td>{{ job.error_message or job.summary_message or "-" }}</td>
+          <td>{{ job.completed_at.strftime('%Y-%m-%d %H:%M:%S') if job.completed_at else '-' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="text-muted">No mailbox sync jobs yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
 <div class="card glass-panel mb-4">
   <div class="card-header">Mailbox Folders</div>
   <div class="card-body">

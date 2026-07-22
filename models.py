@@ -308,6 +308,16 @@ class MailboxDeletionRequest(TimestampMixin, db.Model):
     processed_at = db.Column(db.DateTime)
 
 
+class MailboxSyncJob(TimestampMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    mailbox_folder = db.Column(db.String(255), nullable=False, default="INBOX")
+    status = db.Column(db.String(50), default="queued", nullable=False)
+    summary_message = db.Column(db.Text)
+    error_message = db.Column(db.Text)
+    started_at = db.Column(db.DateTime)
+    completed_at = db.Column(db.DateTime)
+
+
 class ChatSession(TimestampMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     tender_id = db.Column(db.Integer, db.ForeignKey("tender.id"))

@@ -3,7 +3,8 @@ from __future__ import annotations
 from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
 
 from database import db
-from models import MailboxMessage, Tender
+from models import MailboxMessage, MailboxSyncJob, Tender
+from services.mailbox_jobs import enqueue_mailbox_sync_job, get_mailbox_worker_status
 from services.mailbox_service import (
     create_tender_from_mailbox_message,
     _commit_with_retry,
@@ -47,6 +48,7 @@ def index():
     if selected_folder:
         query = query.filter_by(mailbox_folder=selected_folder)
     messages = query.order_by(MailboxMessage.received_at.desc().nullslast(), MailboxMessage.created_at.desc()).limit(50).all()
+    recent_sync_jobs = MailboxSyncJob.query.order_by(MailboxSyncJob.created_at.desc()).limit(5).all()
     return render_template(
         "mailbox/index.html",
         messages=messages,
@@ -54,6 +56,8 @@ def index():
         folders=folders,
         folder_error=folder_error,
         selected_folder=selected_folder,
+        recent_sync_jobs=recent_sync_jobs,
+        mailbox_worker_status=get_mailbox_worker_status(),
         mailbox_configured=mailbox_is_configured(),
         chat_context={
             "page": "mailbox",
@@ -69,24 +73,16 @@ def index():
 def sync():
     tender_id = request.form.get("tender_id", type=int)
     selected_folder = (request.form.get("folder") or "").strip()
-    try:
-        result = (
-            sync_mailbox_folder(current_app.config["DATA_DIR"], selected_folder)
-            if selected_folder
-            else sync_mailbox(current_app.config["DATA_DIR"])
-        )
-        label = selected_folder or "default folder"
-        deletion_summary = ""
-        processed = result.get("remote_deletions_processed", 0)
-        failed = result.get("remote_deletions_failed", 0)
-        if processed or failed:
-            deletion_summary = f" Remote deletions synced: {processed} processed, {failed} still pending."
-        flash(
-            f"Mailbox sync complete for {label}. Created {result['created']} message(s), updated {result['updated']}.{deletion_summary}",
-            "success",
-        )
-    except Exception as exc:
-        flash(f"Mailbox sync failed: {exc}", "danger")
+    label = selected_folder or (request.form.get("folder") or "").strip() or "INBOX"
+    job = MailboxSyncJob(
+        mailbox_folder=selected_folder or "INBOX",
+        status="queued",
+        summary_message=f"Mailbox sync queued for {label}.",
+    )
+    db.session.add(job)
+    db.session.commit()
+    enqueue_mailbox_sync_job(job.id)
+    flash(f"Mailbox sync queued for {label}. The page will refresh immediately while Gmail sync continues in the background.", "success")
     route_kwargs = {}
     if tender_id:
         route_kwargs["tender_id"] = tender_id
