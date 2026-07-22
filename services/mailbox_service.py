@@ -181,10 +181,13 @@ def _save_attachment(data_dir: Path, mailbox_message: MailboxMessage, part) -> N
     filename = part.get_filename()
     if not filename:
         return
+    original_name = Path(filename).name
+    existing_filenames = {attachment.original_filename for attachment in mailbox_message.attachments}
+    if original_name in existing_filenames:
+        return
     payload = part.get_payload(decode=True) or b""
     message_dir = _message_storage_dir(data_dir, mailbox_message) / "attachments"
     message_dir.mkdir(parents=True, exist_ok=True)
-    original_name = Path(filename).name
     extension = Path(original_name).suffix.lower()
     stored_name = f"{uuid.uuid4().hex}{extension}"
     destination = message_dir / stored_name
@@ -200,6 +203,16 @@ def _save_attachment(data_dir: Path, mailbox_message: MailboxMessage, part) -> N
             processing_notes=error,
         )
     )
+
+
+def _iter_attachment_parts(message: email.message.EmailMessage):
+    for part in message.walk():
+        if part.is_multipart():
+            continue
+        filename = part.get_filename()
+        disposition = part.get_content_disposition()
+        if filename or disposition == "attachment":
+            yield part
 
 
 def _sync_message_record(data_dir: Path, uid: str, raw_bytes: bytes, folder: str) -> MailboxMessage:
@@ -228,9 +241,8 @@ def _sync_message_record(data_dir: Path, uid: str, raw_bytes: bytes, folder: str
     mailbox_message.snippet = (mailbox_message.body_text or "")[:240] or mailbox_message.subject
     mailbox_message.is_read = "Seen" in (parsed.get("flags") or "")
     _save_message_payload(data_dir, mailbox_message, raw_bytes)
-    if is_new:
-        for part in parsed.iter_attachments():
-            _save_attachment(data_dir, mailbox_message, part)
+    for part in _iter_attachment_parts(parsed):
+        _save_attachment(data_dir, mailbox_message, part)
     return mailbox_message
 
 
