@@ -15,6 +15,9 @@ from models import (
     ChatSession,
     ExtractionJob,
     LLMRunLog,
+    MailboxAttachment,
+    MailboxMessage,
+    MailboxTenderLink,
     RAGChunk,
     RAGDocument,
     RFQ,
@@ -56,6 +59,9 @@ ADMIN_MODELS = {
     "chat-messages": ChatMessage,
     "chat-actions": ChatAction,
     "extraction-jobs": ExtractionJob,
+    "mailbox-messages": MailboxMessage,
+    "mailbox-attachments": MailboxAttachment,
+    "mailbox-tender-links": MailboxTenderLink,
 }
 
 ADMIN_MODEL_META = {
@@ -76,6 +82,9 @@ ADMIN_MODEL_META = {
     "chat-messages": {"label": "Chat Messages", "description": "Persisted user and assistant chat history."},
     "chat-actions": {"label": "Chat Actions", "description": "Proposed and confirmed AI actions awaiting execution or audit."},
     "extraction-jobs": {"label": "Extraction Jobs", "description": "Queued, running, failed, and cancelled background extraction records."},
+    "mailbox-messages": {"label": "Mailbox Messages", "description": "Synced Gmail inbox messages available for tender creation and linking."},
+    "mailbox-attachments": {"label": "Mailbox Attachments", "description": "Stored mailbox attachment files and their extracted text."},
+    "mailbox-tender-links": {"label": "Mailbox Tender Links", "description": "Links showing which mailbox messages were imported into which tenders."},
 }
 
 

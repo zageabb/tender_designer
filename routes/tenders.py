@@ -135,6 +135,7 @@ def detail_tender(tender_id: int):
         "visible_item_ids": [item.id for item in tender.items],
         "visible_question_ids": [question.id for question in tender.questions],
         "visible_rfq_ids": [rfq.id for rfq in tender.rfqs],
+        "visible_mailbox_message_ids": [link.mailbox_message_id for link in tender.mailbox_links[:12]],
     }
     return render_template(
         "tenders/detail.html",

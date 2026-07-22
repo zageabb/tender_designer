@@ -8,7 +8,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from database import db
-from models import ChatAction, ChatMessage, ChatSession, ChatUpload, Tender, TenderDocument, TenderItem, TenderQuestion, TenderSubItem
+from models import ChatAction, ChatMessage, ChatSession, ChatUpload, MailboxMessage, Tender, TenderDocument, TenderItem, TenderQuestion, TenderSubItem
 from services.file_storage import ensure_tender_directories, save_tender_bytes
 from services.markdown_tools import extracted_text_suffix
 from services.ollama_client import OllamaClient
@@ -435,6 +435,38 @@ def _serialize_page_context(page_context: dict | None) -> str:
     return "\n".join(lines)
 
 
+def _serialize_mailbox_context(page_context: dict | None, limit: int = 8) -> str:
+    context = page_context or {}
+    selected_message_id = context.get("selected_mailbox_message_id")
+    visible_ids = context.get("visible_mailbox_message_ids") or []
+    message_ids: list[int] = []
+    if selected_message_id:
+        message_ids.append(int(selected_message_id))
+    for value in visible_ids:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            continue
+        if parsed not in message_ids:
+            message_ids.append(parsed)
+    if not message_ids:
+        return "No mailbox context was supplied."
+    messages = MailboxMessage.query.filter(MailboxMessage.id.in_(message_ids[:limit])).order_by(MailboxMessage.received_at.desc().nullslast()).all()
+    if not messages:
+        return "No mailbox messages were found for the supplied context."
+    lines = ["Mailbox Messages:"]
+    for message in messages[:limit]:
+        lines.append(
+            f"- Message #{message.id} | {message.received_at.isoformat() if message.received_at else '-'} | "
+            f"from {message.sender_email or message.sender_name or '-'} | subject {message.subject or '-'}"
+        )
+        if message.body_text:
+            lines.append(f"  Body: {message.body_text[:500]}")
+        if message.attachments:
+            lines.append("  Attachments: " + ", ".join(attachment.original_filename for attachment in message.attachments[:6]))
+    return "\n".join(lines)
+
+
 def _serialize_tender_context(tender: Tender | None) -> str:
     if tender is None:
         return "No active tender context is available."
@@ -452,6 +484,7 @@ def _serialize_tender_context(tender: Tender | None) -> str:
         f"Item Count: {len(tender.items)}",
         f"Question Count: {len(tender.questions)}",
         f"RFQ Count: {len(tender.rfqs)}",
+        f"Mailbox Email Count: {len(tender.mailbox_links)}",
         "Top Items:",
     ]
     for item in tender.items[:8]:
@@ -464,6 +497,14 @@ def _serialize_tender_context(tender: Tender | None) -> str:
     lines.append("Documents:")
     for document in tender.documents[:8]:
         lines.append(f"- {document.original_filename} | {'Processed' if document.processed else 'Pending'}")
+    if tender.mailbox_links:
+        lines.append("Linked Mailbox Messages:")
+        for link in tender.mailbox_links[:8]:
+            message = link.mailbox_message
+            lines.append(
+                f"- Email #{message.id} | {message.subject or '-'} | from {message.sender_email or message.sender_name or '-'} | "
+                f"attachments {len(message.attachments)}"
+            )
     return "\n".join(lines)
 
 
@@ -681,7 +722,7 @@ def _general_llm_chat_response(message: str, page_context: dict | None, tender: 
         tender_context = _serialize_tender_list_context()
     prompt = render_prompt(
         "chat_general_answer",
-        page_context=_serialize_page_context(page_context),
+        page_context=_serialize_page_context(page_context) + "\n\n" + _serialize_mailbox_context(page_context),
         tender_context=tender_context,
         document_text_context=_serialize_document_text_context(tender, selected_document_ids=selected_document_ids),
         user_message=message,
@@ -736,6 +777,17 @@ def build_chat_response(
             if any(phrase in normalized for phrase in {"show tenders", "list tenders", "what tenders", "which tenders", "summarise tenders", "summarize tenders"}):
                 message_text, steps = _summarize_tender_list()
                 return {"response_type": "answer", "message": message_text, "intermediate_steps": steps, "actions": []}
+        if current_page in {"mailbox", "mailbox_message"} and any(phrase in normalized for phrase in {"show mailbox", "list emails", "show emails", "what emails", "summarise mailbox", "summarize mailbox"}):
+            mailbox_text = _serialize_mailbox_context(page_context)
+            return {
+                "response_type": "answer",
+                "message": mailbox_text,
+                "intermediate_steps": [
+                    "Read the current mailbox page context from the UI.",
+                    "Summarised the synced mailbox messages visible in this context.",
+                ],
+                "actions": [],
+            }
             if any(phrase in normalized for phrase in {"submission dates", "upcoming submissions", "submission schedule", "due dates", "which tenders are due", "what is due"}):
                 message_text, steps = _summarize_submission_schedule()
                 return {"response_type": "answer", "message": message_text, "intermediate_steps": steps, "actions": []}
@@ -793,7 +845,11 @@ def build_chat_response(
             "message": (
                 "I can help with the tender list. Ask for upcoming submission dates, a status summary, or which tenders need attention."
                 if current_page == "tender_list"
-                else f"I can help with {context_label}. If you upload a document here, I can summarise it or prepare a new tender from it."
+                else (
+                    "I can help with the mailbox. Ask me to summarise the visible emails, compare their content, or create a tender from a selected email."
+                    if current_page in {"mailbox", "mailbox_message"}
+                    else f"I can help with {context_label}. If you upload a document here, I can summarise it or prepare a new tender from it."
+                )
             ),
             "intermediate_steps": [
                 "Used the current page context from the UI.",

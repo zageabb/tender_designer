@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 from flask import Blueprint, current_app, flash, redirect, render_template, request, send_file, url_for
 
 from database import db
 from models import RFQ, Tender
+from services.mailbox_service import send_eml_file
 from services.rfq_service import create_rfq_for_selection, write_rfq_eml
 
 
@@ -102,6 +104,21 @@ def download_rfq(rfq_id: int):
         flash("The RFI EML file is missing.", "danger")
         return redirect(url_for("rfqs.view_rfq", rfq_id=rfq.id))
     return send_file(path, as_attachment=True, download_name=path.name, mimetype="message/rfc822")
+
+
+@rfqs_bp.route("/<int:rfq_id>/send", methods=["POST"])
+def send_rfq_direct(rfq_id: int):
+    rfq = RFQ.query.get_or_404(rfq_id)
+    try:
+        send_eml_file(rfq.eml_file_path or "")
+        rfq.status = "Sent Direct"
+        rfq.sent_at = datetime.utcnow()
+        db.session.commit()
+        flash(f"RFI sent directly to {rfq.supplier_email or 'the configured recipient list'}.", "success")
+    except Exception as exc:
+        db.session.rollback()
+        flash(f"Direct send failed: {exc}", "danger")
+    return redirect(url_for("rfqs.view_rfq", rfq_id=rfq.id))
 
 
 @rfqs_bp.route("/<int:rfq_id>/delete", methods=["POST"])

@@ -11,6 +11,9 @@
     <a class="btn btn-outline-dark btn-lg" href="{{ url_for('tenders.detail_tender', tender_id=tender_email.tender_id) }}">Back to Tender</a>
     <a class="btn btn-outline-primary btn-lg" href="{{ url_for('tender_emails.edit_tender_email', tender_email_id=tender_email.id) }}">Edit Draft</a>
     <a class="btn btn-primary btn-lg" href="{{ url_for('tender_emails.download_tender_email', tender_email_id=tender_email.id) }}">Download .eml</a>
+    <form method="post" action="{{ url_for('tender_emails.send_tender_email', tender_email_id=tender_email.id) }}">
+      <button class="btn btn-outline-light btn-lg" type="submit">Send Direct</button>
+    </form>
     <form method="post" action="{{ url_for('tender_emails.delete_tender_email', tender_email_id=tender_email.id) }}" onsubmit="return confirm('Delete tender email draft {{ tender_email.subject }}? This will remove the draft and its generated email file.');">
       <button class="btn btn-outline-danger btn-lg" type="submit">Delete Draft</button>
     </form>

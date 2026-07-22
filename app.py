@@ -10,6 +10,7 @@ from routes.admin import admin_bp
 from routes.chat import chat_bp
 from routes.computer_finder import computer_finder_bp
 from routes.dashboard import dashboard_bp
+from routes.mailbox import mailbox_bp
 from routes.rfqs import rfqs_bp
 from routes.settings import settings_bp
 from routes.tender_emails import tender_emails_bp
@@ -34,6 +35,7 @@ def create_app() -> Flask:
     app.jinja_env.globals["render_markdown_html"] = render_markdown_html
 
     app.register_blueprint(dashboard_bp)
+    app.register_blueprint(mailbox_bp)
     app.register_blueprint(tenders_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(chat_bp)

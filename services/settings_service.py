@@ -62,6 +62,50 @@ DEFAULT_SETTINGS = {
         "value": "Kind regards,\nTender Designer Team",
         "description": "Default signature appended to RFQ email bodies.",
     },
+    "mail_account_email": {
+        "value": "abbot.server@gmail.com",
+        "description": "Mailbox account address used for sending and receiving tender email.",
+    },
+    "mail_username": {
+        "value": "abbot.server@gmail.com",
+        "description": "Mailbox login username for IMAP and SMTP access.",
+    },
+    "mail_app_password": {
+        "value": "",
+        "description": "Google app password used for IMAP and SMTP access.",
+    },
+    "mail_from_name": {
+        "value": "Tender Designer",
+        "description": "Display name used when Tender Designer sends email directly.",
+    },
+    "mail_imap_host": {
+        "value": "imap.gmail.com",
+        "description": "IMAP host used to sync mailbox messages.",
+    },
+    "mail_imap_port": {
+        "value": "993",
+        "description": "IMAP SSL port used to sync mailbox messages.",
+    },
+    "mail_inbox_folder": {
+        "value": "INBOX",
+        "description": "Mailbox folder to sync into Tender Designer.",
+    },
+    "mail_sync_limit": {
+        "value": "20",
+        "description": "Maximum number of recent mailbox messages to sync per request.",
+    },
+    "mail_smtp_host": {
+        "value": "smtp.gmail.com",
+        "description": "SMTP host used to send Tender Designer email directly.",
+    },
+    "mail_smtp_port": {
+        "value": "587",
+        "description": "SMTP port used to send Tender Designer email directly.",
+    },
+    "mail_use_starttls": {
+        "value": "true",
+        "description": "Use STARTTLS for SMTP connections when sending directly.",
+    },
     "vector_store_path": {
         "value": "data/vector_store",
         "description": "Local vector store path for future RAG support.",

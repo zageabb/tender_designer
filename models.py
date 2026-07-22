@@ -39,6 +39,7 @@ class Tender(TimestampMixin, db.Model):
     questions = db.relationship("TenderQuestion", back_populates="tender", cascade="all, delete-orphan")
     llm_runs = db.relationship("LLMRunLog", cascade="all, delete-orphan")
     extraction_jobs = db.relationship("ExtractionJob", back_populates="tender", cascade="all, delete-orphan")
+    mailbox_links = db.relationship("MailboxTenderLink", back_populates="tender", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<Tender {self.tender_number}>"
@@ -253,6 +254,48 @@ class AppSetting(TimestampMixin, db.Model):
     key = db.Column(db.String(255), unique=True, nullable=False)
     value = db.Column(db.Text)
     description = db.Column(db.Text)
+
+
+class MailboxMessage(TimestampMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    provider_message_id = db.Column(db.String(255), unique=True, nullable=False)
+    mailbox_folder = db.Column(db.String(255), default="INBOX", nullable=False)
+    subject = db.Column(db.String(500))
+    sender_name = db.Column(db.String(255))
+    sender_email = db.Column(db.String(255))
+    recipient_emails = db.Column(db.Text)
+    cc_emails = db.Column(db.Text)
+    received_at = db.Column(db.DateTime)
+    body_text = db.Column(db.Text)
+    snippet = db.Column(db.Text)
+    raw_eml_path = db.Column(db.String(500))
+    is_read = db.Column(db.Boolean, default=False, nullable=False)
+
+    attachments = db.relationship("MailboxAttachment", back_populates="mailbox_message", cascade="all, delete-orphan")
+    tender_links = db.relationship("MailboxTenderLink", back_populates="mailbox_message", cascade="all, delete-orphan")
+
+
+class MailboxAttachment(TimestampMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    mailbox_message_id = db.Column(db.Integer, db.ForeignKey("mailbox_message.id"), nullable=False)
+    original_filename = db.Column(db.String(255), nullable=False)
+    stored_filename = db.Column(db.String(255), nullable=False)
+    file_path = db.Column(db.String(500), nullable=False)
+    file_type = db.Column(db.String(50), nullable=False)
+    extracted_text = db.Column(db.Text)
+    processing_notes = db.Column(db.Text)
+
+    mailbox_message = db.relationship("MailboxMessage", back_populates="attachments")
+
+
+class MailboxTenderLink(TimestampMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    mailbox_message_id = db.Column(db.Integer, db.ForeignKey("mailbox_message.id"), nullable=False)
+    tender_id = db.Column(db.Integer, db.ForeignKey("tender.id"), nullable=False)
+    notes = db.Column(db.Text)
+
+    mailbox_message = db.relationship("MailboxMessage", back_populates="tender_links")
+    tender = db.relationship("Tender", back_populates="mailbox_links")
 
 
 class ChatSession(TimestampMixin, db.Model):
