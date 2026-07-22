@@ -26,6 +26,7 @@ _worker_thread: threading.Thread | None = None
 _worker_resume_event = threading.Event()
 _worker_resume_event.set()
 _active_job_id: int | None = None
+_queued_job_ids: set[int] = set()
 
 
 TASK_CONFIG = {
@@ -62,8 +63,40 @@ def _selected_document_ids(job: ExtractionJob) -> list[int]:
     return [int(value) for value in values if str(value).isdigit()]
 
 
-def enqueue_extraction_job(job_id: int) -> None:
+def _pending_job_ids(app: Flask) -> list[int]:
+    with app.app_context():
+        pending_jobs = (
+            ExtractionJob.query.filter(ExtractionJob.status.in_(["queued", "running"]))
+            .order_by(ExtractionJob.created_at.asc())
+            .all()
+        )
+    return [job.id for job in pending_jobs]
+
+
+def ensure_extraction_worker(app: Flask) -> bool:
+    global _worker_started, _worker_thread
+    started_now = False
+    with _worker_lock:
+        worker_alive = bool(_worker_thread and _worker_thread.is_alive())
+        if not worker_alive:
+            worker = threading.Thread(target=_worker_loop, args=(app,), name="extraction-worker", daemon=True)
+            worker.start()
+            _worker_thread = worker
+            _worker_started = True
+            started_now = True
+    if started_now:
+        for pending_job_id in _pending_job_ids(app):
+            enqueue_extraction_job(pending_job_id)
+    return started_now
+
+
+def enqueue_extraction_job(job_id: int) -> bool:
+    with _worker_lock:
+        if job_id in _queued_job_ids or _active_job_id == job_id:
+            return False
+        _queued_job_ids.add(job_id)
     _job_queue.put(job_id)
+    return True
 
 
 def pause_extraction_worker() -> None:
@@ -302,24 +335,21 @@ def _worker_loop(app: Flask) -> None:
         try:
             _worker_resume_event.wait()
             process_extraction_job(app, job_id)
+        except Exception as exc:
+            app.logger.exception("Extraction worker failed while processing job %s", job_id)
+            with app.app_context():
+                job = ExtractionJob.query.get(job_id)
+                if job and job.status in {"queued", "running", "cancelling"}:
+                    job.status = "failed"
+                    job.summary_message = None
+                    job.error_message = f"Background worker error: {exc}"
+                    job.completed_at = datetime.utcnow()
+                    db.session.commit()
         finally:
+            with _worker_lock:
+                _queued_job_ids.discard(job_id)
             _job_queue.task_done()
 
 
 def start_extraction_worker(app: Flask) -> None:
-    global _worker_started, _worker_thread
-    with _worker_lock:
-        if _worker_started:
-            return
-        worker = threading.Thread(target=_worker_loop, args=(app,), name="extraction-worker", daemon=True)
-        worker.start()
-        _worker_thread = worker
-        _worker_started = True
-    with app.app_context():
-        pending_jobs = (
-            ExtractionJob.query.filter(ExtractionJob.status.in_(["queued", "running"]))
-            .order_by(ExtractionJob.created_at.asc())
-            .all()
-        )
-    for job in pending_jobs:
-        enqueue_extraction_job(job.id)
+    ensure_extraction_worker(app)

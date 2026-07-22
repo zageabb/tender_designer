@@ -4,7 +4,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 import json
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 from sqlalchemy import inspect
 
 from database import db
@@ -37,6 +37,7 @@ from models import (
 )
 from services.extraction_jobs import (
     cancel_extraction_job,
+    ensure_extraction_worker,
     get_worker_status,
     pause_extraction_worker,
     resume_extraction_worker,
@@ -202,6 +203,7 @@ def pause_jobs_worker():
 
 @admin_bp.route("/jobs/worker/resume", methods=["POST"])
 def resume_jobs_worker():
+    ensure_extraction_worker(current_app)
     resume_extraction_worker()
     flash("Background extraction worker resumed.", "success")
     return redirect(url_for("admin.job_dashboard"))

@@ -14,7 +14,7 @@ from werkzeug.utils import secure_filename
 from database import db
 from models import ExtractionJob, LLMRunLog, Tender, TenderDocument, TenderItem, TenderQuestion, TenderSubItem, recalculate_tender_totals
 from services.document_extraction import extract_text
-from services.extraction_jobs import TASK_CONFIG, enqueue_extraction_job
+from services.extraction_jobs import TASK_CONFIG, enqueue_extraction_job, ensure_extraction_worker
 from services.file_storage import ensure_tender_directories, save_tender_bytes, save_tender_upload
 from services.chat_service import add_chat_message, get_or_create_session
 from services.markdown_tools import extracted_text_suffix, looks_like_markdown, render_markdown_html
@@ -523,6 +523,7 @@ def run_extraction_task(tender_id: int, task_name: str):
     )
     db.session.add(job)
     db.session.commit()
+    ensure_extraction_worker(current_app)
     enqueue_extraction_job(job.id)
     try:
         chat_session = get_or_create_session(db, tender.id, page_context)
