@@ -76,8 +76,13 @@ def sync():
             else sync_mailbox(current_app.config["DATA_DIR"])
         )
         label = selected_folder or "default folder"
+        deletion_summary = ""
+        processed = result.get("remote_deletions_processed", 0)
+        failed = result.get("remote_deletions_failed", 0)
+        if processed or failed:
+            deletion_summary = f" Remote deletions synced: {processed} processed, {failed} still pending."
         flash(
-            f"Mailbox sync complete for {label}. Created {result['created']} message(s), updated {result['updated']}.",
+            f"Mailbox sync complete for {label}. Created {result['created']} message(s), updated {result['updated']}.{deletion_summary}",
             "success",
         )
     except Exception as exc:

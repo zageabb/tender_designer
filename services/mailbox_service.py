@@ -16,7 +16,7 @@ from email.utils import getaddresses, parseaddr
 from pathlib import Path
 
 from database import db
-from models import MailboxAttachment, MailboxMessage, MailboxTenderLink, Tender, TenderDocument
+from models import MailboxAttachment, MailboxDeletionRequest, MailboxMessage, MailboxTenderLink, Tender, TenderDocument
 from sqlalchemy.exc import OperationalError
 from services.document_extraction import extract_text
 from services.file_storage import ensure_tender_directories, save_tender_bytes
@@ -129,7 +129,15 @@ def _parse_folder_line(raw_line: bytes | str) -> str:
 
 def _trash_folder_name(folders: list[str]) -> str | None:
     lowered = {folder.lower(): folder for folder in folders}
-    for candidate in ["[gmail]/trash", "[googlemail]/trash", "trash", "deleted messages", "bin"]:
+    for candidate in ["[gmail]/trash", "[googlemail]/trash", "[gmail]/bin", "[googlemail]/bin", "trash", "deleted messages", "bin"]:
+        if candidate in lowered:
+            return lowered[candidate]
+    return None
+
+
+def _all_mail_folder_name(folders: list[str]) -> str | None:
+    lowered = {folder.lower(): folder for folder in folders}
+    for candidate in ["[gmail]/all mail", "[googlemail]/all mail", "all mail"]:
         if candidate in lowered:
             return lowered[candidate]
     return None
@@ -153,6 +161,13 @@ def _commit_with_retry(max_attempts: int = 3, delay_seconds: float = 0.35) -> No
             time.sleep(delay_seconds * (attempt + 1))
     if last_error is not None:
         raise last_error
+
+
+def _queued_deletion_for(provider_message_id: str | None) -> MailboxDeletionRequest | None:
+    value = (provider_message_id or "").strip()
+    if not value:
+        return None
+    return MailboxDeletionRequest.query.filter_by(provider_message_id=value).first()
 
 
 def _save_message_payload(data_dir: Path, mailbox_message: MailboxMessage, raw_bytes: bytes) -> None:
@@ -190,6 +205,11 @@ def _save_attachment(data_dir: Path, mailbox_message: MailboxMessage, part) -> N
 def _sync_message_record(data_dir: Path, uid: str, raw_bytes: bytes, folder: str) -> MailboxMessage:
     parsed = BytesParser(policy=policy.default).parsebytes(raw_bytes)
     identifier = _message_identifier(parsed, uid)
+    deletion_request = _queued_deletion_for(identifier)
+    if deletion_request is not None:
+        deletion_request.mailbox_folder = deletion_request.mailbox_folder or folder
+        deletion_request.subject = deletion_request.subject or ((parsed.get("subject") or "").strip() or "(No subject)")
+        return None
     sender_name, sender_email = parseaddr(parsed.get("from", ""))
     mailbox_message = MailboxMessage.query.filter_by(provider_message_id=identifier).first()
     is_new = mailbox_message is None
@@ -212,6 +232,108 @@ def _sync_message_record(data_dir: Path, uid: str, raw_bytes: bytes, folder: str
         for part in parsed.iter_attachments():
             _save_attachment(data_dir, mailbox_message, part)
     return mailbox_message
+
+
+def _candidate_message_locations(mailbox: imaplib.IMAP4_SSL, provider_message_id: str, preferred_folder: str | None = None) -> list[tuple[str, str]]:
+    folders = list_mailbox_folders()
+    search_folders: list[str] = []
+    if preferred_folder:
+        search_folders.append(preferred_folder)
+    all_mail_folder = _all_mail_folder_name(folders)
+    if all_mail_folder:
+        search_folders.append(all_mail_folder)
+    for folder in folders:
+        if folder not in search_folders and not folder.endswith("]/Bin") and folder.lower() not in {"[gmail]", "[googlemail]"}:
+            search_folders.append(folder)
+
+    locations: list[tuple[str, str]] = []
+    fallback_uid = _message_uid_from_identifier(provider_message_id)
+    if fallback_uid and preferred_folder:
+        return [(preferred_folder, fallback_uid)]
+
+    for folder in search_folders:
+        status, _ = mailbox.select(folder)
+        if status != "OK":
+            continue
+        status, data = mailbox.uid("search", None, "HEADER", "Message-ID", f'"{provider_message_id}"')
+        if status != "OK":
+            continue
+        for uid in (data[0] or b"").split():
+            parsed_uid = uid.decode("utf-8", errors="ignore")
+            candidate = (folder, parsed_uid)
+            if parsed_uid and candidate not in locations:
+                locations.append(candidate)
+    return locations
+
+
+def _apply_remote_delete(mailbox: imaplib.IMAP4_SSL, provider_message_id: str, preferred_folder: str | None = None) -> str:
+    folders = list_mailbox_folders()
+    trash_folder = _trash_folder_name(folders)
+    locations = _candidate_message_locations(mailbox, provider_message_id, preferred_folder=preferred_folder)
+    if not locations:
+        return "message not found remotely"
+
+    ordered_locations = sorted(
+        locations,
+        key=lambda value: (
+            0 if value[0] == _all_mail_folder_name(folders) else 1,
+            0 if value[0] == preferred_folder else 1,
+            value[0].lower(),
+        ),
+    )
+    for folder, uid in ordered_locations:
+        status, _ = mailbox.select(folder)
+        if status != "OK":
+            continue
+        if trash_folder and trash_folder != folder:
+            move_status, _ = mailbox.uid("COPY", uid, trash_folder)
+            if move_status == "OK":
+                mailbox.uid("STORE", uid, "+FLAGS", r"(\Deleted)")
+                mailbox.expunge()
+                return f"moved to {trash_folder}"
+        store_status, _ = mailbox.uid("STORE", uid, "+FLAGS", r"(\Deleted)")
+        if store_status == "OK":
+            mailbox.expunge()
+            return "marked deleted on mailbox"
+    return "remote delete could not be completed"
+
+
+def process_pending_mailbox_deletions() -> dict[str, int]:
+    pending = MailboxDeletionRequest.query.filter(MailboxDeletionRequest.status.in_(["queued", "failed"])).order_by(MailboxDeletionRequest.created_at.asc()).all()
+    if not pending:
+        return {"processed": 0, "failed": 0}
+    mailbox = _connect_mailbox()
+    processed = 0
+    failed = 0
+    try:
+        for request in pending:
+            try:
+                remote_status = _apply_remote_delete(mailbox, request.provider_message_id, preferred_folder=request.mailbox_folder)
+                if remote_status == "message not found remotely":
+                    request.status = "synced"
+                    request.last_error = None
+                    request.processed_at = datetime.utcnow()
+                    db.session.delete(request)
+                    processed += 1
+                elif remote_status in {"marked deleted on mailbox"} or remote_status.startswith("moved to "):
+                    request.status = "synced"
+                    request.last_error = None
+                    request.processed_at = datetime.utcnow()
+                    db.session.delete(request)
+                    processed += 1
+                else:
+                    request.status = "failed"
+                    request.last_error = remote_status
+                    failed += 1
+                _commit_with_retry()
+            except Exception as exc:
+                request.status = "failed"
+                request.last_error = str(exc)
+                failed += 1
+                _commit_with_retry()
+    finally:
+        _close_mailbox(mailbox)
+    return {"processed": processed, "failed": failed}
 
 
 def sync_mailbox(data_dir: Path) -> dict[str, int]:
@@ -242,6 +364,10 @@ def sync_mailbox_folder(data_dir: Path, folder: str) -> dict[str, int]:
     limit = int(get_setting("mail_sync_limit", "20") or "20")
     created = 0
     updated = 0
+    try:
+        deletion_result = process_pending_mailbox_deletions()
+    except Exception as exc:
+        deletion_result = {"processed": 0, "failed": 1, "error": str(exc)}
     mailbox = _connect_mailbox()
     try:
         status, _ = mailbox.select(folder, readonly=True)
@@ -264,7 +390,10 @@ def sync_mailbox_folder(data_dir: Path, folder: str) -> dict[str, int]:
             if not raw_bytes:
                 continue
             existing = MailboxMessage.query.filter_by(provider_message_id=_message_identifier(BytesParser(policy=policy.default).parsebytes(raw_bytes), uid)).first()
-            _sync_message_record(data_dir, uid, raw_bytes, folder)
+            synced_message = _sync_message_record(data_dir, uid, raw_bytes, folder)
+            if synced_message is None:
+                _commit_with_retry()
+                continue
             if existing is None:
                 created += 1
             else:
@@ -272,7 +401,12 @@ def sync_mailbox_folder(data_dir: Path, folder: str) -> dict[str, int]:
             _commit_with_retry()
     finally:
         _close_mailbox(mailbox)
-    return {"created": created, "updated": updated}
+    return {
+        "created": created,
+        "updated": updated,
+        "remote_deletions_processed": deletion_result["processed"],
+        "remote_deletions_failed": deletion_result["failed"],
+    }
 
 
 def delete_mailbox_message(data_dir: Path, mailbox_message: MailboxMessage) -> str:
@@ -280,48 +414,38 @@ def delete_mailbox_message(data_dir: Path, mailbox_message: MailboxMessage) -> s
         raise ValueError("Mailbox settings are incomplete. Add the Gmail username and app password in Settings first.")
     folder = mailbox_message.mailbox_folder or (get_setting("mail_inbox_folder", "INBOX") or "INBOX")
     message_id = mailbox_message.provider_message_id or ""
-    mailbox = _connect_mailbox()
-    remote_status = "deleted locally only"
+    deletion_request = _queued_deletion_for(message_id)
+    if deletion_request is None and message_id:
+        deletion_request = MailboxDeletionRequest(
+            provider_message_id=message_id,
+            mailbox_folder=folder,
+            subject=mailbox_message.subject,
+            status="queued",
+        )
+        db.session.add(deletion_request)
+    elif deletion_request is not None:
+        deletion_request.mailbox_folder = folder
+        deletion_request.subject = mailbox_message.subject or deletion_request.subject
+        deletion_request.status = "queued"
+    remote_status = "queued for Gmail deletion"
+    mailbox = None
     try:
-        folders = list_mailbox_folders()
-        trash_folder = _trash_folder_name(folders)
-        status, _ = mailbox.select(folder)
-        if status != "OK":
-            raise ValueError(f"Could not open mailbox folder {folder}.")
-        candidate_uids: list[str] = []
-        fallback_uid = _message_uid_from_identifier(message_id)
-        if fallback_uid:
-            candidate_uids.append(fallback_uid)
-        if message_id and not message_id.startswith("imap-uid:"):
-            status, data = mailbox.uid("search", None, "HEADER", "Message-ID", f'"{message_id}"')
-            if status == "OK":
-                candidate_uids.extend(
-                    uid.decode("utf-8", errors="ignore")
-                    for uid in (data[0] or b"").split()
-                    if uid
-                )
-        candidate_uids = [uid for uid in dict.fromkeys(candidate_uids) if uid]
-        if candidate_uids:
-            deleted_remote = False
-            for uid in candidate_uids:
-                if trash_folder and trash_folder != folder:
-                    move_status, _ = mailbox.uid("COPY", uid, trash_folder)
-                    if move_status == "OK":
-                        mailbox.uid("STORE", uid, "+FLAGS", r"(\Deleted)")
-                        deleted_remote = True
-                        remote_status = f"moved to {trash_folder}"
-                        break
-                store_status, _ = mailbox.uid("STORE", uid, "+FLAGS", r"(\Deleted)")
-                if store_status == "OK":
-                    deleted_remote = True
-                    remote_status = "marked deleted on mailbox"
-                    break
-            if deleted_remote:
-                mailbox.expunge()
-        else:
-            remote_status = "message not found remotely"
+        mailbox = _connect_mailbox()
+        if message_id:
+            remote_status = _apply_remote_delete(mailbox, message_id, preferred_folder=folder)
+    except Exception as exc:
+        remote_status = f"queued for Gmail deletion ({exc})"
     finally:
-        _close_mailbox(mailbox)
+        if mailbox is not None:
+            _close_mailbox(mailbox)
+
+    if deletion_request is not None:
+        if remote_status == "message not found remotely" or remote_status == "marked deleted on mailbox" or remote_status.startswith("moved to "):
+            db.session.delete(deletion_request)
+        else:
+            deletion_request.status = "queued"
+            deletion_request.last_error = remote_status
+            deletion_request.processed_at = None
 
     message_dir = _mailbox_root(data_dir) / str(mailbox_message.id)
     if message_dir.exists():

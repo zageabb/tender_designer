@@ -298,6 +298,16 @@ class MailboxTenderLink(TimestampMixin, db.Model):
     tender = db.relationship("Tender", back_populates="mailbox_links")
 
 
+class MailboxDeletionRequest(TimestampMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    provider_message_id = db.Column(db.String(255), unique=True, nullable=False)
+    mailbox_folder = db.Column(db.String(255))
+    subject = db.Column(db.String(500))
+    status = db.Column(db.String(50), default="queued", nullable=False)
+    last_error = db.Column(db.Text)
+    processed_at = db.Column(db.DateTime)
+
+
 class ChatSession(TimestampMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     tender_id = db.Column(db.Integer, db.ForeignKey("tender.id"))
