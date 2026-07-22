@@ -8,16 +8,24 @@
     <p class="hero-copy mb-0">Review the synced email, create a new tender from it, or import it into an existing tender.</p>
   </div>
   <div class="hero-actions">
-    <a class="btn btn-outline-dark btn-lg" href="{{ url_for('mailbox.index', tender_id=tender.id if tender else None) }}">Back to Mailbox</a>
+    <a class="btn btn-outline-dark btn-lg" href="{{ url_for('mailbox.index', tender_id=tender.id if tender else None, folder=selected_folder) }}">Back to Mailbox</a>
     <form method="post" action="{{ url_for('mailbox.create_tender_from_message', message_id=mailbox_message.id) }}">
+      {% if tender %}<input type="hidden" name="tender_id" value="{{ tender.id }}">{% endif %}
+      <input type="hidden" name="folder" value="{{ selected_folder or mailbox_message.mailbox_folder or '' }}">
       <button class="btn btn-primary btn-lg" type="submit">Create Tender</button>
     </form>
     {% if tender %}
     <form method="post" action="{{ url_for('mailbox.import_to_tender', message_id=mailbox_message.id) }}">
       <input type="hidden" name="tender_id" value="{{ tender.id }}">
+      <input type="hidden" name="folder" value="{{ selected_folder or mailbox_message.mailbox_folder or '' }}">
       <button class="btn btn-outline-light btn-lg" type="submit">Import To {{ tender.tender_number }}</button>
     </form>
     {% endif %}
+    <form method="post" action="{{ url_for('mailbox.delete_message', message_id=mailbox_message.id) }}" onsubmit="return confirm('Delete email {{ mailbox_message.subject }}? Tender Designer will remove the synced record and try to move the mailbox email to Trash.');">
+      {% if tender %}<input type="hidden" name="tender_id" value="{{ tender.id }}">{% endif %}
+      <input type="hidden" name="folder" value="{{ selected_folder or mailbox_message.mailbox_folder or '' }}">
+      <button class="btn btn-outline-danger btn-lg" type="submit">Delete Email</button>
+    </form>
   </div>
 </section>
 
@@ -34,6 +42,10 @@
           <div class="col-md-6">
             <div class="small text-muted">Received</div>
             <div class="fw-semibold">{{ mailbox_message.received_at.strftime('%Y-%m-%d %H:%M:%S') if mailbox_message.received_at else '-' }}</div>
+          </div>
+          <div class="col-md-6">
+            <div class="small text-muted">Folder</div>
+            <div class="fw-semibold">{{ mailbox_message.mailbox_folder or '-' }}</div>
           </div>
           <div class="col-12">
             <div class="small text-muted">To</div>

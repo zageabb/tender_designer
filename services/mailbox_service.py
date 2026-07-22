@@ -4,6 +4,7 @@ import email
 import imaplib
 import mimetypes
 import re
+import shutil
 import smtplib
 import uuid
 from datetime import datetime
@@ -81,6 +82,57 @@ def _message_identifier(message: email.message.EmailMessage, uid: str) -> str:
     return message_id or f"imap-uid:{uid}"
 
 
+def _message_uid_from_identifier(provider_message_id: str | None) -> str | None:
+    value = (provider_message_id or "").strip()
+    if value.startswith("imap-uid:"):
+        return value.split(":", 1)[1].strip() or None
+    return None
+
+
+def _connect_mailbox() -> imaplib.IMAP4_SSL:
+    host = get_setting("mail_imap_host", "imap.gmail.com") or "imap.gmail.com"
+    port = int(get_setting("mail_imap_port", "993") or "993")
+    username = get_setting("mail_username", "")
+    password = get_setting("mail_app_password", "")
+    mailbox = imaplib.IMAP4_SSL(host, port)
+    mailbox.login(username, password)
+    return mailbox
+
+
+def _close_mailbox(mailbox: imaplib.IMAP4_SSL) -> None:
+    try:
+        mailbox.close()
+    except Exception:
+        pass
+    try:
+        mailbox.logout()
+    except Exception:
+        pass
+
+
+def _decode_folder_name(raw_folder: bytes | str) -> str:
+    if isinstance(raw_folder, bytes):
+        return raw_folder.decode("utf-8", errors="ignore")
+    return raw_folder
+
+
+def _parse_folder_line(raw_line: bytes | str) -> str:
+    line = _decode_folder_name(raw_line).strip()
+    if ' "/" ' in line:
+        return line.split(' "/" ', 1)[1].strip('"')
+    if ' "." ' in line:
+        return line.split(' "." ', 1)[1].strip('"')
+    return line.rsplit(" ", 1)[-1].strip('"')
+
+
+def _trash_folder_name(folders: list[str]) -> str | None:
+    lowered = {folder.lower(): folder for folder in folders}
+    for candidate in ["[gmail]/trash", "[googlemail]/trash", "trash", "deleted messages", "bin"]:
+        if candidate in lowered:
+            return lowered[candidate]
+    return None
+
+
 def _save_message_payload(data_dir: Path, mailbox_message: MailboxMessage, raw_bytes: bytes) -> None:
     message_dir = _message_storage_dir(data_dir, mailbox_message)
     raw_path = message_dir / "message.eml"
@@ -143,17 +195,33 @@ def _sync_message_record(data_dir: Path, uid: str, raw_bytes: bytes, folder: str
 def sync_mailbox(data_dir: Path) -> dict[str, int]:
     if not mailbox_is_configured():
         raise ValueError("Mailbox settings are incomplete. Add the Gmail username and app password in Settings first.")
-    host = get_setting("mail_imap_host", "imap.gmail.com") or "imap.gmail.com"
-    port = int(get_setting("mail_imap_port", "993") or "993")
-    username = get_setting("mail_username", "")
-    password = get_setting("mail_app_password", "")
     folder = get_setting("mail_inbox_folder", "INBOX") or "INBOX"
+    return sync_mailbox_folder(data_dir, folder)
+
+
+def list_mailbox_folders() -> list[str]:
+    if not mailbox_is_configured():
+        return []
+    mailbox = _connect_mailbox()
+    try:
+        status, data = mailbox.list()
+        if status != "OK":
+            raise ValueError("Could not read mailbox folders.")
+        folders = [_parse_folder_line(line) for line in data or [] if line]
+        folders = [folder for folder in folders if folder]
+        return sorted(dict.fromkeys(folders), key=str.lower)
+    finally:
+        _close_mailbox(mailbox)
+
+
+def sync_mailbox_folder(data_dir: Path, folder: str) -> dict[str, int]:
+    if not mailbox_is_configured():
+        raise ValueError("Mailbox settings are incomplete. Add the Gmail username and app password in Settings first.")
     limit = int(get_setting("mail_sync_limit", "20") or "20")
     created = 0
     updated = 0
-    mailbox = imaplib.IMAP4_SSL(host, port)
+    mailbox = _connect_mailbox()
     try:
-        mailbox.login(username, password)
         status, _ = mailbox.select(folder, readonly=True)
         if status != "OK":
             raise ValueError(f"Could not open mailbox folder {folder}.")
@@ -181,15 +249,63 @@ def sync_mailbox(data_dir: Path) -> dict[str, int]:
                 updated += 1
         db.session.commit()
     finally:
-        try:
-            mailbox.close()
-        except Exception:
-            pass
-        try:
-            mailbox.logout()
-        except Exception:
-            pass
+        _close_mailbox(mailbox)
     return {"created": created, "updated": updated}
+
+
+def delete_mailbox_message(data_dir: Path, mailbox_message: MailboxMessage) -> str:
+    if not mailbox_is_configured():
+        raise ValueError("Mailbox settings are incomplete. Add the Gmail username and app password in Settings first.")
+    folder = mailbox_message.mailbox_folder or (get_setting("mail_inbox_folder", "INBOX") or "INBOX")
+    message_id = mailbox_message.provider_message_id or ""
+    mailbox = _connect_mailbox()
+    remote_status = "deleted locally only"
+    try:
+        folders = list_mailbox_folders()
+        trash_folder = _trash_folder_name(folders)
+        status, _ = mailbox.select(folder)
+        if status != "OK":
+            raise ValueError(f"Could not open mailbox folder {folder}.")
+        candidate_uids: list[str] = []
+        fallback_uid = _message_uid_from_identifier(message_id)
+        if fallback_uid:
+            candidate_uids.append(fallback_uid)
+        if message_id and not message_id.startswith("imap-uid:"):
+            status, data = mailbox.uid("search", None, "HEADER", "Message-ID", f'"{message_id}"')
+            if status == "OK":
+                candidate_uids.extend(
+                    uid.decode("utf-8", errors="ignore")
+                    for uid in (data[0] or b"").split()
+                    if uid
+                )
+        candidate_uids = [uid for uid in dict.fromkeys(candidate_uids) if uid]
+        if candidate_uids:
+            deleted_remote = False
+            for uid in candidate_uids:
+                if trash_folder and trash_folder != folder:
+                    move_status, _ = mailbox.uid("COPY", uid, trash_folder)
+                    if move_status == "OK":
+                        mailbox.uid("STORE", uid, "+FLAGS", r"(\Deleted)")
+                        deleted_remote = True
+                        remote_status = f"moved to {trash_folder}"
+                        break
+                store_status, _ = mailbox.uid("STORE", uid, "+FLAGS", r"(\Deleted)")
+                if store_status == "OK":
+                    deleted_remote = True
+                    remote_status = "marked deleted on mailbox"
+                    break
+            if deleted_remote:
+                mailbox.expunge()
+        else:
+            remote_status = "message not found remotely"
+    finally:
+        _close_mailbox(mailbox)
+
+    message_dir = _mailbox_root(data_dir) / str(mailbox_message.id)
+    if message_dir.exists():
+        shutil.rmtree(message_dir, ignore_errors=True)
+    db.session.delete(mailbox_message)
+    return remote_status
 
 
 def send_eml_file(file_path: str | Path) -> None:
