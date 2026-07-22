@@ -10,6 +10,7 @@ from pathlib import Path
 from database import db
 from models import ChatAction, ChatMessage, ChatSession, ChatUpload, MailboxMessage, Tender, TenderDocument, TenderItem, TenderQuestion, TenderSubItem
 from services.file_storage import ensure_tender_directories, save_tender_bytes
+from services.mailbox_service import send_composed_message
 from services.markdown_tools import extracted_text_suffix
 from services.ollama_client import OllamaClient
 from services.prompt_service import render_prompt
@@ -137,6 +138,67 @@ def _heuristic_add_items_request(normalized: str, raw_message: str) -> bool:
     )
     line_match = bool(re.search(r"(?m)^\s*\d+\s*x\s+.+", raw_message))
     return action_match and line_match
+
+
+def _heuristic_send_mail_request(normalized: str) -> bool:
+    return any(
+        phrase in normalized
+        for phrase in {
+            "send email to",
+            "send an email to",
+            "email this to",
+            "compose email to",
+            "write email to",
+        }
+    )
+
+
+def _parse_send_mail_request(raw_message: str, tender: Tender | None) -> dict | None:
+    lines = [line.rstrip() for line in raw_message.strip().splitlines() if line.strip()]
+    if not lines:
+        return None
+    first_line = lines[0]
+    to_match = re.search(r"\b(?:send|email|compose|write)\b.*?\bto\s+([A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,})", first_line, flags=re.IGNORECASE)
+    if not to_match:
+        for line in lines:
+            if line.lower().startswith("to:"):
+                to_match = re.search(r"([A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,})", line, flags=re.IGNORECASE)
+                if to_match:
+                    break
+    if not to_match:
+        return None
+    recipient_email = to_match.group(1).strip()
+    subject = ""
+    cc_emails = ""
+    body_lines: list[str] = []
+    for line in lines[1:]:
+        lower = line.lower()
+        if lower.startswith("subject:"):
+            subject = line.split(":", 1)[1].strip()
+            continue
+        if lower.startswith("cc:"):
+            cc_emails = line.split(":", 1)[1].strip()
+            continue
+        if lower.startswith("body:"):
+            body_lines.append(line.split(":", 1)[1].strip())
+            continue
+        body_lines.append(line)
+    body_text = "\n".join(body_lines).strip()
+    if not body_text:
+        return None
+    if not subject:
+        if tender is not None:
+            subject = tender.tender_number
+            if tender.title:
+                subject = f"{subject} - {tender.title}"
+        else:
+            subject = "Tender Designer Email"
+    return {
+        "recipient_email": recipient_email,
+        "cc_emails": cc_emails,
+        "subject": subject[:255],
+        "body_text": body_text,
+    }
 
 
 def _heuristic_answer_questions_request(normalized: str) -> bool:
@@ -788,6 +850,7 @@ def build_chat_response(
                 ],
                 "actions": [],
             }
+        if current_page == "tender_list":
             if any(phrase in normalized for phrase in {"submission dates", "upcoming submissions", "submission schedule", "due dates", "which tenders are due", "what is due"}):
                 message_text, steps = _summarize_submission_schedule()
                 return {"response_type": "answer", "message": message_text, "intermediate_steps": steps, "actions": []}
@@ -797,6 +860,37 @@ def build_chat_response(
             if any(phrase in normalized for phrase in {"what is missing", "what's missing", "needs attention", "which tenders need attention", "what needs doing"}):
                 message_text, steps = _summarize_tenders_needing_attention()
                 return {"response_type": "answer", "message": message_text, "intermediate_steps": steps, "actions": []}
+        if _heuristic_send_mail_request(normalized):
+            parsed_email = _parse_send_mail_request(message, tender)
+            if parsed_email is None:
+                return {
+                    "response_type": "answer",
+                    "message": "I can send an email from chat if you include a recipient and body. Example:\n\n`Send email to buyer@example.com`\n`Subject: Tender update`\n`Body: Here is the latest status...`",
+                    "intermediate_steps": [
+                        "Detected a mailbox send request in the chat message.",
+                        "Could not safely parse a complete recipient/body combination from the message.",
+                    ],
+                    "actions": [],
+                }
+            return {
+                "response_type": "proposed_action",
+                "message": (
+                    f"I can send this email to {parsed_email['recipient_email']} with subject `{parsed_email['subject']}`. "
+                    "Reply with 'confirm' and I will send it from Tender Designer."
+                ),
+                "intermediate_steps": [
+                    "Detected a send-email request in chat without a tender record requirement.",
+                    "Parsed the recipient, subject, and body into a draft mailbox action.",
+                ],
+                "actions": [
+                    {
+                        "action_type": "send_mailbox_message",
+                        "tender_id": None,
+                        **parsed_email,
+                        "requires_confirmation": True,
+                    }
+                ],
+            }
         if session_uploads and (intent_hint == "create_tender_from_upload" or _heuristic_create_tender_request(normalized)):
             upload_ids = [upload.id for upload in session_uploads]
             upload_names = [upload.original_filename for upload in session_uploads[:5]]
@@ -984,6 +1078,39 @@ def build_chat_response(
                     "action_type": "add_items_from_message",
                     "tender_id": tender.id,
                     "items": parsed_items,
+                    "requires_confirmation": True,
+                }
+            ],
+        }
+
+    if _heuristic_send_mail_request(normalized):
+        parsed_email = _parse_send_mail_request(message, tender)
+        if parsed_email is None:
+            return {
+                "response_type": "answer",
+                "message": "I can send an email from chat if you include a recipient and body. Example:\n\n`Send email to buyer@example.com`\n`Subject: Tender update`\n`Body: Here is the latest status...`",
+                "intermediate_steps": [
+                    "Detected a mailbox send request in the current tender context.",
+                    "Could not safely parse a complete recipient/body combination from the message.",
+                ],
+                "actions": [],
+            }
+        return {
+            "response_type": "proposed_action",
+            "message": (
+                f"I can send this email to {parsed_email['recipient_email']} with subject `{parsed_email['subject']}`. "
+                "Reply with 'confirm' and I will send it from Tender Designer."
+            ),
+            "intermediate_steps": [
+                "Detected a send-email request in the current tender context.",
+                "Parsed the recipient, subject, and body into a draft mailbox action.",
+                f"Tender link: {tender.tender_number}.",
+            ],
+            "actions": [
+                {
+                    "action_type": "send_mailbox_message",
+                    "tender_id": tender.id,
+                    **parsed_email,
                     "requires_confirmation": True,
                 }
             ],
@@ -1234,6 +1361,27 @@ def apply_confirmed_action(action: ChatAction, data_dir: Path) -> str:
         if updated == 0:
             return f"I checked {len(documents)} document(s), but I could not confidently fill any tender question answers for {tender.tender_number}."
         return f"Updated {updated} tender question answer field(s) for {tender.tender_number} using {len(documents)} supporting document(s)."
+    if action.action_type == "send_mailbox_message":
+        tender = Tender.query.get(payload.get("tender_id")) if payload.get("tender_id") else None
+        mailbox_message = send_composed_message(
+            data_dir,
+            payload.get("recipient_email") or "",
+            payload.get("subject") or "",
+            payload.get("body_text") or "",
+            cc_emails=payload.get("cc_emails") or None,
+            tender=tender,
+        )
+        action.status = "applied"
+        redirect_path = f"/mailbox/{mailbox_message.id}"
+        if tender is not None:
+            redirect_path = f"{redirect_path}?tender_id={tender.id}"
+        action.result_json = json.dumps(
+            {
+                "message_id": mailbox_message.id,
+                "redirect_path": redirect_path,
+            }
+        )
+        return f"Sent mailbox email to {mailbox_message.recipient_emails or payload.get('recipient_email')}."
     raise ValueError(f"Unsupported action type: {action.action_type}")
 
 

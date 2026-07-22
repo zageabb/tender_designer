@@ -6,7 +6,7 @@
     <span class="eyebrow">Mailbox</span>
     <h1 class="display-title">Tender Mailbox</h1>
     <p class="hero-copy mb-0">
-      Sync the Gmail inbox, create tenders from email, and import incoming messages into an existing tender.
+      Sync the Gmail inbox, create tenders from email, send new messages, and link mailbox conversations to a tender.
       {% if tender %}Currently linking against tender {{ tender.tender_number }}.{% endif %}
     </p>
   </div>
@@ -14,10 +14,13 @@
     <form method="post" action="{{ url_for('mailbox.sync') }}">
       {% if tender %}<input type="hidden" name="tender_id" value="{{ tender.id }}">{% endif %}
       {% if selected_folder %}<input type="hidden" name="folder" value="{{ selected_folder }}">{% endif %}
+      <input type="hidden" name="mode" value="{{ selected_view_mode }}">
+      {% if include_archived %}<input type="hidden" name="include_archived" value="1">{% endif %}
       <button class="btn btn-primary btn-lg" type="submit">Sync Mailbox</button>
     </form>
+    <a class="btn btn-outline-dark btn-lg" href="{{ url_for('mailbox.compose_message', tender_id=tender.id if tender else None, folder=selected_folder) }}">New Message</a>
     {% if tender %}
-    <a class="btn btn-outline-dark btn-lg" href="{{ url_for('tenders.detail_tender', tender_id=tender.id, _anchor='mailbox') }}">Back to Tender</a>
+    <a class="btn btn-outline-light btn-lg" href="{{ url_for('tenders.detail_tender', tender_id=tender.id, _anchor='mailbox') }}">Back to Tender</a>
     {% endif %}
   </div>
 </section>
@@ -68,11 +71,11 @@
 </div>
 
 <div class="card glass-panel mb-4">
-  <div class="card-header">Mailbox Folders</div>
+  <div class="card-header">Mailbox View</div>
   <div class="card-body">
     <form method="get" action="{{ url_for('mailbox.index') }}" class="row g-3 align-items-end">
       {% if tender %}<input type="hidden" name="tender_id" value="{{ tender.id }}">{% endif %}
-      <div class="col-lg-8">
+      <div class="col-lg-4">
         <label class="form-label">Folder</label>
         <select class="form-select" name="folder">
           <option value="">All synced folders</option>
@@ -81,8 +84,21 @@
           {% endfor %}
         </select>
       </div>
-      <div class="col-lg-4">
-        <button class="btn btn-outline-primary w-100" type="submit">Open Folder</button>
+      <div class="col-lg-3">
+        <label class="form-label">Display</label>
+        <select class="form-select" name="mode">
+          <option value="messages" {% if selected_view_mode == 'messages' %}selected{% endif %}>Messages</option>
+          <option value="conversation" {% if selected_view_mode == 'conversation' %}selected{% endif %}>Conversations</option>
+        </select>
+      </div>
+      <div class="col-lg-3">
+        <div class="form-check mt-4">
+          <input class="form-check-input" type="checkbox" name="include_archived" value="1" id="include_archived" {% if include_archived %}checked{% endif %}>
+          <label class="form-check-label" for="include_archived">Include archived mail</label>
+        </div>
+      </div>
+      <div class="col-lg-2">
+        <button class="btn btn-outline-primary w-100" type="submit">Open</button>
       </div>
     </form>
     <div class="small text-muted mt-2">
@@ -93,12 +109,20 @@
 
 <div class="card glass-panel">
   <div class="card-header d-flex justify-content-between align-items-center">
-    <span>{% if selected_folder %}{{ selected_folder }}{% else %}Recent Mail{% endif %}</span>
-    <span class="text-muted small">Showing the latest 50 synced records{% if selected_folder %} from this folder{% endif %}</span>
+    <span>{% if selected_view_mode == 'conversation' %}Conversations{% else %}{% if selected_folder %}{{ selected_folder }}{% else %}Recent Mail{% endif %}{% endif %}</span>
+    <span class="text-muted small">
+      {% if selected_view_mode == 'conversation' %}
+      Showing the latest 50 conversation groups
+      {% else %}
+      Showing the latest 50 synced records{% if selected_folder %} from this folder{% endif %}
+      {% endif %}
+    </span>
   </div>
   <form method="post" action="{{ url_for('mailbox.bulk_action') }}">
     {% if tender %}<input type="hidden" name="tender_id" value="{{ tender.id }}">{% endif %}
     {% if selected_folder %}<input type="hidden" name="folder" value="{{ selected_folder }}">{% endif %}
+    <input type="hidden" name="mode" value="{{ selected_view_mode }}">
+    {% if include_archived %}<input type="hidden" name="include_archived" value="1">{% endif %}
     <div class="card-body border-bottom">
       <div class="d-flex gap-2 flex-wrap align-items-center">
         <button class="btn btn-outline-primary" type="submit" name="bulk_action" value="open">Open Selected</button>
@@ -106,34 +130,68 @@
         {% if tender %}
         <button class="btn btn-outline-dark" type="submit" name="bulk_action" value="import_to_tender">Import To Tender</button>
         {% endif %}
+        <button class="btn btn-outline-warning" type="submit" name="bulk_action" value="archive" onclick="return confirm('Archive the selected email(s)? They will remain visible from linked tenders.');">Archive Selected</button>
         <button class="btn btn-outline-danger" type="submit" name="bulk_action" value="delete" onclick="return confirm('Delete the selected email(s)? Tender Designer will remove the synced records and try to move the mailbox email(s) to Trash.');">Delete Selected</button>
-        <span class="small text-muted">Select one or more emails below, then run an action from here.</span>
+        <span class="small text-muted">Unread messages stay highlighted until opened.</span>
       </div>
     </div>
-  <div class="table-responsive">
-    <table class="table align-middle mb-0">
-      <thead>
-        <tr><th><input class="form-check-input" type="checkbox" data-mailbox-select-all></th><th>Received</th><th>Folder</th><th>From</th><th>Subject</th><th>Attachments</th></tr>
-      </thead>
-      <tbody>
-        {% for message in messages %}
-        <tr>
-          <td><input class="form-check-input" type="checkbox" name="message_ids" value="{{ message.id }}" data-mailbox-select-item></td>
-          <td>{{ message.received_at.strftime('%Y-%m-%d %H:%M') if message.received_at else '-' }}</td>
-          <td>{{ message.mailbox_folder or '-' }}</td>
-          <td>{{ message.sender_name or message.sender_email or 'Unknown sender' }}</td>
-          <td>
-            <div class="fw-semibold"><a class="link-dark text-decoration-none" href="{{ url_for('mailbox.view_message', message_id=message.id, tender_id=tender.id if tender else None, folder=selected_folder or message.mailbox_folder) }}">{{ message.subject }}</a></div>
-            <div class="small text-muted">{{ message.snippet or '-' }}</div>
-          </td>
-          <td>{{ message.attachments|length }}</td>
-        </tr>
-        {% else %}
-        <tr><td colspan="6" class="text-muted">No mailbox messages have been synced yet.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+    {% if selected_view_mode == 'conversation' %}
+    <div class="table-responsive">
+      <table class="table align-middle mb-0">
+        <thead>
+          <tr><th><input class="form-check-input" type="checkbox" data-mailbox-select-all></th><th>Latest</th><th>Messages</th><th>Unread</th><th>Participants</th><th>Subject</th><th>Folder</th></tr>
+        </thead>
+        <tbody>
+          {% for conversation in conversation_summaries %}
+          {% set message = conversation.latest_message %}
+          <tr class="{% if conversation.unread_count %}table-warning{% endif %}">
+            <td><input class="form-check-input" type="checkbox" name="message_ids" value="{{ message.id }}" data-mailbox-select-item></td>
+            <td>{{ message.received_at.strftime('%Y-%m-%d %H:%M') if message.received_at else '-' }}</td>
+            <td>{{ conversation.count }}</td>
+            <td>{% if conversation.unread_count %}<span class="badge text-bg-warning">{{ conversation.unread_count }}</span>{% else %}<span class="text-muted">0</span>{% endif %}</td>
+            <td>{{ message.sender_name or message.sender_email or 'Unknown sender' }}</td>
+            <td>
+              <div class="fw-semibold"><a class="link-dark text-decoration-none" href="{{ url_for('mailbox.view_message', message_id=message.id, tender_id=tender.id if tender else None, folder=selected_folder or message.mailbox_folder) }}">{{ message.subject }}</a></div>
+              <div class="small text-muted">{{ message.snippet or '-' }}</div>
+            </td>
+            <td>{{ message.mailbox_folder or '-' }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" class="text-muted">No mailbox conversations have been synced yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="table-responsive">
+      <table class="table align-middle mb-0">
+        <thead>
+          <tr><th><input class="form-check-input" type="checkbox" data-mailbox-select-all></th><th>Received</th><th>Folder</th><th>From</th><th>Subject</th><th>Attachments</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          {% for message in messages %}
+          <tr class="{% if not message.is_read %}table-warning{% endif %}">
+            <td><input class="form-check-input" type="checkbox" name="message_ids" value="{{ message.id }}" data-mailbox-select-item></td>
+            <td>{{ message.received_at.strftime('%Y-%m-%d %H:%M') if message.received_at else '-' }}</td>
+            <td>{{ message.mailbox_folder or '-' }}</td>
+            <td>{{ message.sender_name or message.sender_email or 'Unknown sender' }}</td>
+            <td>
+              <div class="fw-semibold"><a class="link-dark text-decoration-none" href="{{ url_for('mailbox.view_message', message_id=message.id, tender_id=tender.id if tender else None, folder=selected_folder or message.mailbox_folder) }}">{{ message.subject }}</a></div>
+              <div class="small text-muted">{{ message.snippet or '-' }}</div>
+            </td>
+            <td>{{ message.attachments|length }}</td>
+            <td>
+              {% if not message.is_read %}<span class="badge text-bg-warning">New</span>{% else %}<span class="badge text-bg-light">Read</span>{% endif %}
+              {% if message.tender_links %}<span class="badge text-bg-info">Linked</span>{% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" class="text-muted">No mailbox messages have been synced yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
   </form>
 </div>
 <script>

@@ -5,10 +5,11 @@
   <div>
     <span class="eyebrow">Mailbox Message</span>
     <h1 class="display-title">{{ mailbox_message.subject }}</h1>
-    <p class="hero-copy mb-0">Review the synced email, create a new tender from it, or import it into an existing tender.</p>
+    <p class="hero-copy mb-0">Review the synced email, archive it, create a tender from it, or link it to an existing tender.</p>
   </div>
   <div class="hero-actions">
     <a class="btn btn-outline-dark btn-lg" href="{{ url_for('mailbox.index', tender_id=tender.id if tender else None, folder=selected_folder) }}">Back to Mailbox</a>
+    <a class="btn btn-outline-light btn-lg" href="{{ url_for('mailbox.compose_message', tender_id=tender.id if tender else None, folder=selected_folder) }}">New Message</a>
     <form method="post" action="{{ url_for('mailbox.create_tender_from_message', message_id=mailbox_message.id) }}">
       {% if tender %}<input type="hidden" name="tender_id" value="{{ tender.id }}">{% endif %}
       <input type="hidden" name="folder" value="{{ selected_folder or mailbox_message.mailbox_folder or '' }}">
@@ -18,9 +19,14 @@
     <form method="post" action="{{ url_for('mailbox.import_to_tender', message_id=mailbox_message.id) }}">
       <input type="hidden" name="tender_id" value="{{ tender.id }}">
       <input type="hidden" name="folder" value="{{ selected_folder or mailbox_message.mailbox_folder or '' }}">
-      <button class="btn btn-outline-light btn-lg" type="submit">Import To {{ tender.tender_number }}</button>
+      <button class="btn btn-outline-primary btn-lg" type="submit">Import To {{ tender.tender_number }}</button>
     </form>
     {% endif %}
+    <form method="post" action="{{ url_for('mailbox.archive_message', message_id=mailbox_message.id) }}" onsubmit="return confirm('Archive email {{ mailbox_message.subject }}? It will remain available from any linked tender.');">
+      {% if tender %}<input type="hidden" name="tender_id" value="{{ tender.id }}">{% endif %}
+      <input type="hidden" name="folder" value="{{ selected_folder or mailbox_message.mailbox_folder or '' }}">
+      <button class="btn btn-outline-warning btn-lg" type="submit">Archive</button>
+    </form>
     <form method="post" action="{{ url_for('mailbox.delete_message', message_id=mailbox_message.id) }}" onsubmit="return confirm('Delete email {{ mailbox_message.subject }}? Tender Designer will remove the synced record and try to move the mailbox email to Trash.');">
       {% if tender %}<input type="hidden" name="tender_id" value="{{ tender.id }}">{% endif %}
       <input type="hidden" name="folder" value="{{ selected_folder or mailbox_message.mailbox_folder or '' }}">
@@ -45,7 +51,10 @@
           </div>
           <div class="col-md-6">
             <div class="small text-muted">Folder</div>
-            <div class="fw-semibold">{{ mailbox_message.mailbox_folder or '-' }}</div>
+            <div class="fw-semibold">
+              {{ mailbox_message.mailbox_folder or '-' }}
+              {% if not mailbox_message.is_read %}<span class="badge text-bg-warning ms-2">New</span>{% endif %}
+            </div>
           </div>
           <div class="col-12">
             <div class="small text-muted">To</div>
@@ -64,22 +73,44 @@
     </div>
   </div>
   <div class="col-xl-5">
-    <div class="card glass-panel h-100">
+    <div class="card glass-panel mb-4">
       <div class="card-header">Attachments</div>
       <div class="table-responsive">
         <table class="table align-middle mb-0">
-          <thead><tr><th>Filename</th><th>Type</th></tr></thead>
+          <thead><tr><th>Filename</th><th>Type</th><th>Actions</th></tr></thead>
           <tbody>
             {% for attachment in mailbox_message.attachments %}
             <tr>
               <td>{{ attachment.original_filename }}</td>
               <td>{{ attachment.file_type }}</td>
+              <td><a class="btn btn-sm btn-outline-secondary" href="{{ url_for('mailbox.download_attachment', message_id=mailbox_message.id, attachment_id=attachment.id) }}">Download</a></td>
             </tr>
             {% else %}
-            <tr><td colspan="2" class="text-muted">No attachments were found on this message.</td></tr>
+            <tr><td colspan="3" class="text-muted">No attachments were found on this message.</td></tr>
             {% endfor %}
           </tbody>
         </table>
+      </div>
+    </div>
+
+    <div class="card glass-panel mb-4">
+      <div class="card-header">Link To Tender</div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('mailbox.link_to_tender', message_id=mailbox_message.id) }}" class="row g-3 align-items-end">
+          <input type="hidden" name="folder" value="{{ selected_folder or mailbox_message.mailbox_folder or '' }}">
+          <div class="col-12">
+            <label class="form-label">Tender</label>
+            <select class="form-select" name="link_tender_id">
+              <option value="">Choose a tender</option>
+              {% for candidate in tenders %}
+              <option value="{{ candidate.id }}" {% if tender and candidate.id == tender.id %}selected{% endif %}>{{ candidate.tender_number }}{% if candidate.title %} - {{ candidate.title }}{% endif %}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12">
+            <button class="btn btn-outline-primary" type="submit">Link To Tender</button>
+          </div>
+        </form>
       </div>
       {% if mailbox_message.tender_links %}
       <div class="card-header border-top">Linked Tenders</div>
@@ -91,6 +122,26 @@
         </ul>
       </div>
       {% endif %}
+    </div>
+
+    <div class="card glass-panel">
+      <div class="card-header">Conversation</div>
+      <div class="table-responsive">
+        <table class="table align-middle mb-0">
+          <thead><tr><th>Received</th><th>From</th><th>Subject</th></tr></thead>
+          <tbody>
+            {% for message in conversation_messages %}
+            <tr class="{% if message.id == mailbox_message.id %}table-active{% elif not message.is_read %}table-warning{% endif %}">
+              <td>{{ message.received_at.strftime('%Y-%m-%d %H:%M') if message.received_at else '-' }}</td>
+              <td>{{ message.sender_name or message.sender_email or 'Unknown sender' }}</td>
+              <td><a class="link-dark text-decoration-none fw-semibold" href="{{ url_for('mailbox.view_message', message_id=message.id, tender_id=tender.id if tender else None, folder=selected_folder or message.mailbox_folder) }}">{{ message.subject }}</a></td>
+            </tr>
+            {% else %}
+            <tr><td colspan="3" class="text-muted">No related conversation messages found.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 </div>

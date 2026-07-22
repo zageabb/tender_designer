@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Compose Mail | Tender Designer{% endblock %}
+{% block content %}
+<section class="hero-card mb-4">
+  <div>
+    <span class="eyebrow">Mailbox</span>
+    <h1 class="display-title">Compose Message</h1>
+    <p class="hero-copy mb-0">Create and send a new mailbox message from Tender Designer.{% if tender %} This message can also be linked to tender {{ tender.tender_number }}.{% endif %}</p>
+  </div>
+  <div class="hero-actions">
+    <a class="btn btn-outline-dark btn-lg" href="{{ url_for('mailbox.index', tender_id=tender.id if tender else None, folder=selected_folder) }}">Back to Mailbox</a>
+  </div>
+</section>
+
+<div class="card glass-panel">
+  <div class="card-header">New Email</div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('mailbox.compose_message') }}" class="row g-3">
+      {% if tender %}<input type="hidden" name="tender_id" value="{{ tender.id }}">{% endif %}
+      {% if selected_folder %}<input type="hidden" name="folder" value="{{ selected_folder }}">{% endif %}
+      <div class="col-md-6">
+        <label class="form-label">To</label>
+        <input class="form-control" type="email" name="recipient_email" required>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Cc</label>
+        <input class="form-control" type="text" name="cc_emails" placeholder="Optional comma-separated emails">
+      </div>
+      <div class="col-12">
+        <label class="form-label">Link To Tender</label>
+        <select class="form-select" name="link_tender_id">
+          <option value="">No tender link</option>
+          {% for candidate in tenders %}
+          <option value="{{ candidate.id }}" {% if tender and candidate.id == tender.id %}selected{% endif %}>{{ candidate.tender_number }}{% if candidate.title %} - {{ candidate.title }}{% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12">
+        <label class="form-label">Subject</label>
+        <input class="form-control" type="text" name="subject" required>
+      </div>
+      <div class="col-12">
+        <label class="form-label">Body</label>
+        <textarea class="form-control" name="body_text" rows="16" required></textarea>
+      </div>
+      <div class="col-12">
+        <button class="btn btn-primary" type="submit">Send Message</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

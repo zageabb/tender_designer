@@ -12,7 +12,7 @@ from datetime import datetime
 from email import policy
 from email.message import EmailMessage
 from email.parser import BytesParser
-from email.utils import getaddresses, parseaddr
+from email.utils import formataddr, getaddresses, make_msgid, parseaddr
 from pathlib import Path
 
 from database import db
@@ -53,6 +53,17 @@ def _strip_html(value: str) -> str:
     return cleaned.strip()
 
 
+def normalize_conversation_subject(value: str | None) -> str:
+    subject = (value or "").strip().lower()
+    if not subject:
+        return "(no subject)"
+    previous = None
+    while previous != subject:
+        previous = subject
+        subject = re.sub(r"^\s*((re|fw|fwd)\s*:\s*)+", "", subject, flags=re.IGNORECASE).strip()
+    return subject or "(no subject)"
+
+
 def _message_body(message: email.message.EmailMessage) -> str:
     plain_part = message.get_body(preferencelist=("plain",))
     if plain_part is not None:
@@ -82,6 +93,12 @@ def _comma_joined_addresses(header_value: str | None) -> str:
 def _message_identifier(message: email.message.EmailMessage, uid: str) -> str:
     message_id = (message.get("message-id") or "").strip()
     return message_id or f"imap-uid:{uid}"
+
+
+def mailbox_message_conversation_key(mailbox_message: MailboxMessage) -> str:
+    sender = (mailbox_message.sender_email or "").strip().lower()
+    recipient_block = (mailbox_message.recipient_emails or "").strip().lower()
+    return f"{normalize_conversation_subject(mailbox_message.subject)}|{sender}|{recipient_block}"
 
 
 def _message_uid_from_identifier(provider_message_id: str | None) -> str | None:
@@ -205,6 +222,25 @@ def _save_attachment(data_dir: Path, mailbox_message: MailboxMessage, part) -> N
     )
 
 
+def _flags_from_fetch_data(fetch_data) -> set[str]:
+    flags: set[str] = set()
+    for part in fetch_data or []:
+        if not isinstance(part, tuple):
+            continue
+        header = part[0]
+        if isinstance(header, bytes):
+            text = header.decode("utf-8", errors="ignore")
+        else:
+            text = str(header)
+        match = re.search(r"FLAGS \(([^)]*)\)", text)
+        if match:
+            for token in match.group(1).split():
+                token = token.strip().strip("\\")
+                if token:
+                    flags.add(token.lower())
+    return flags
+
+
 def _iter_attachment_parts(message: email.message.EmailMessage):
     for part in message.walk():
         if part.is_multipart():
@@ -215,7 +251,7 @@ def _iter_attachment_parts(message: email.message.EmailMessage):
             yield part
 
 
-def _sync_message_record(data_dir: Path, uid: str, raw_bytes: bytes, folder: str) -> MailboxMessage:
+def _sync_message_record(data_dir: Path, uid: str, raw_bytes: bytes, folder: str, flags: set[str] | None = None) -> MailboxMessage:
     parsed = BytesParser(policy=policy.default).parsebytes(raw_bytes)
     identifier = _message_identifier(parsed, uid)
     deletion_request = _queued_deletion_for(identifier)
@@ -225,7 +261,6 @@ def _sync_message_record(data_dir: Path, uid: str, raw_bytes: bytes, folder: str
         return None
     sender_name, sender_email = parseaddr(parsed.get("from", ""))
     mailbox_message = MailboxMessage.query.filter_by(provider_message_id=identifier).first()
-    is_new = mailbox_message is None
     if mailbox_message is None:
         mailbox_message = MailboxMessage(provider_message_id=identifier)
         db.session.add(mailbox_message)
@@ -239,7 +274,7 @@ def _sync_message_record(data_dir: Path, uid: str, raw_bytes: bytes, folder: str
     mailbox_message.received_at = parsed.get("date").datetime if parsed.get("date") and parsed.get("date").datetime else mailbox_message.received_at
     mailbox_message.body_text = _message_body(parsed)
     mailbox_message.snippet = (mailbox_message.body_text or "")[:240] or mailbox_message.subject
-    mailbox_message.is_read = "Seen" in (parsed.get("flags") or "")
+    mailbox_message.is_read = "seen" in (flags or set())
     _save_message_payload(data_dir, mailbox_message, raw_bytes)
     for part in _iter_attachment_parts(parsed):
         _save_attachment(data_dir, mailbox_message, part)
@@ -308,6 +343,42 @@ def _apply_remote_delete(mailbox: imaplib.IMAP4_SSL, provider_message_id: str, p
             mailbox.expunge()
             return "marked deleted on mailbox"
     return "remote delete could not be completed"
+
+
+def _apply_remote_seen(mailbox: imaplib.IMAP4_SSL, provider_message_id: str, preferred_folder: str | None = None) -> str:
+    locations = _candidate_message_locations(mailbox, provider_message_id, preferred_folder=preferred_folder)
+    if not locations:
+        return "message not found remotely"
+    for folder, uid in locations:
+        status, _ = mailbox.select(folder)
+        if status != "OK":
+            continue
+        store_status, _ = mailbox.uid("STORE", uid, "+FLAGS", r"(\Seen)")
+        if store_status == "OK":
+            return "marked read on mailbox"
+    return "remote read update could not be completed"
+
+
+def _apply_remote_archive(mailbox: imaplib.IMAP4_SSL, provider_message_id: str, preferred_folder: str | None = None) -> tuple[str, str | None]:
+    folders = list_mailbox_folders()
+    archive_folder = _all_mail_folder_name(folders)
+    locations = _candidate_message_locations(mailbox, provider_message_id, preferred_folder=preferred_folder)
+    if not locations:
+        return "message not found remotely", archive_folder
+    for folder, uid in locations:
+        status, _ = mailbox.select(folder)
+        if status != "OK":
+            continue
+        gmail_status, _ = mailbox.uid("STORE", uid, "-X-GM-LABELS", "\\Inbox")
+        if gmail_status == "OK":
+            return "archived on mailbox", archive_folder or folder
+        if archive_folder and archive_folder != folder:
+            copy_status, _ = mailbox.uid("COPY", uid, archive_folder)
+            if copy_status == "OK":
+                mailbox.uid("STORE", uid, "+FLAGS", r"(\Deleted)")
+                mailbox.expunge()
+                return f"moved to {archive_folder}", archive_folder
+    return "remote archive could not be completed", archive_folder
 
 
 def process_pending_mailbox_deletions() -> dict[str, int]:
@@ -394,7 +465,7 @@ def sync_mailbox_folder(data_dir: Path, folder: str) -> dict[str, int]:
             uids = uids[-limit:]
         for uid_bytes in reversed(uids):
             uid = uid_bytes.decode("utf-8", errors="ignore")
-            status, fetch_data = mailbox.uid("fetch", uid_bytes, "(RFC822)")
+            status, fetch_data = mailbox.uid("fetch", uid_bytes, "(RFC822 FLAGS)")
             if status != "OK":
                 continue
             raw_bytes = b""
@@ -404,8 +475,9 @@ def sync_mailbox_folder(data_dir: Path, folder: str) -> dict[str, int]:
                     break
             if not raw_bytes:
                 continue
+            flags = _flags_from_fetch_data(fetch_data)
             existing = MailboxMessage.query.filter_by(provider_message_id=_message_identifier(BytesParser(policy=policy.default).parsebytes(raw_bytes), uid)).first()
-            synced_message = _sync_message_record(data_dir, uid, raw_bytes, folder)
+            synced_message = _sync_message_record(data_dir, uid, raw_bytes, folder, flags=flags)
             if synced_message is None:
                 _commit_with_retry()
                 continue
@@ -469,6 +541,50 @@ def delete_mailbox_message(data_dir: Path, mailbox_message: MailboxMessage) -> s
     return remote_status
 
 
+def archive_mailbox_message(mailbox_message: MailboxMessage) -> str:
+    if not mailbox_is_configured():
+        raise ValueError("Mailbox settings are incomplete. Add the Gmail username and app password in Settings first.")
+    folder = mailbox_message.mailbox_folder or (get_setting("mail_inbox_folder", "INBOX") or "INBOX")
+    message_id = mailbox_message.provider_message_id or ""
+    remote_status = "archived locally"
+    archive_folder = _all_mail_folder_name(list_mailbox_folders()) or "Archived"
+    mailbox = None
+    try:
+        mailbox = _connect_mailbox()
+        if message_id:
+            remote_status, remote_folder = _apply_remote_archive(mailbox, message_id, preferred_folder=folder)
+            archive_folder = remote_folder or archive_folder
+    except Exception as exc:
+        remote_status = f"archived locally ({exc})"
+    finally:
+        if mailbox is not None:
+            _close_mailbox(mailbox)
+    mailbox_message.mailbox_folder = archive_folder or "Archived"
+    mailbox_message.is_read = True
+    return remote_status
+
+
+def mark_mailbox_message_read(mailbox_message: MailboxMessage) -> str:
+    if mailbox_message.is_read:
+        return "already read"
+    mailbox_message.is_read = True
+    if not mailbox_is_configured():
+        return "marked read locally"
+    folder = mailbox_message.mailbox_folder or (get_setting("mail_inbox_folder", "INBOX") or "INBOX")
+    message_id = mailbox_message.provider_message_id or ""
+    mailbox = None
+    try:
+        mailbox = _connect_mailbox()
+        if message_id:
+            return _apply_remote_seen(mailbox, message_id, preferred_folder=folder)
+    except Exception as exc:
+        return f"marked read locally ({exc})"
+    finally:
+        if mailbox is not None:
+            _close_mailbox(mailbox)
+    return "marked read locally"
+
+
 def send_eml_file(file_path: str | Path) -> None:
     if not mailbox_is_configured():
         raise ValueError("Mailbox settings are incomplete. Add the Gmail username and app password in Settings first.")
@@ -476,6 +592,27 @@ def send_eml_file(file_path: str | Path) -> None:
     with path.open("rb") as handle:
         message = BytesParser(policy=policy.default).parse(handle)
     _send_message(message)
+
+
+def build_outbound_message(
+    recipient_email: str,
+    subject: str,
+    body_text: str,
+    cc_emails: str | None = None,
+) -> EmailMessage:
+    if not recipient_email.strip():
+        raise ValueError("A recipient email address is required.")
+    account_email = get_setting("mail_account_email", get_setting("mail_username", "")) or ""
+    from_name = get_setting("mail_from_name", "Tender Designer") or "Tender Designer"
+    message = EmailMessage()
+    message["Message-ID"] = make_msgid(domain=(account_email.split("@", 1)[1] if "@" in account_email else None))
+    message["Subject"] = subject.strip() or "(No subject)"
+    message["To"] = recipient_email.strip()
+    if cc_emails and cc_emails.strip():
+        message["Cc"] = cc_emails.strip()
+    message["From"] = formataddr((from_name, account_email)) if account_email else from_name
+    message.set_content(body_text or "")
+    return message
 
 
 def _send_message(message: EmailMessage) -> None:
@@ -495,6 +632,50 @@ def _send_message(message: EmailMessage) -> None:
             server.ehlo()
         server.login(username, password)
         server.send_message(message)
+
+
+def save_sent_message(
+    data_dir: Path,
+    message: EmailMessage,
+    tender: Tender | None = None,
+) -> MailboxMessage:
+    provider_message_id = (message.get("Message-ID") or "").strip() or f"local-sent:{uuid.uuid4().hex}"
+    mailbox_message = MailboxMessage.query.filter_by(provider_message_id=provider_message_id).first()
+    if mailbox_message is None:
+        mailbox_message = MailboxMessage(provider_message_id=provider_message_id)
+        db.session.add(mailbox_message)
+        db.session.flush()
+    sender_name, sender_email = parseaddr(message.get("From", ""))
+    mailbox_message.mailbox_folder = "Sent"
+    mailbox_message.subject = (message.get("Subject") or "").strip() or "(No subject)"
+    mailbox_message.sender_name = sender_name or None
+    mailbox_message.sender_email = sender_email or None
+    mailbox_message.recipient_emails = _comma_joined_addresses(message.get("To"))
+    mailbox_message.cc_emails = _comma_joined_addresses(message.get("Cc"))
+    mailbox_message.received_at = datetime.utcnow()
+    mailbox_message.body_text = _message_body(message)
+    mailbox_message.snippet = (mailbox_message.body_text or "")[:240] or mailbox_message.subject
+    mailbox_message.is_read = True
+    raw_bytes = message.as_bytes()
+    _save_message_payload(data_dir, mailbox_message, raw_bytes)
+    for part in _iter_attachment_parts(message):
+        _save_attachment(data_dir, mailbox_message, part)
+    if tender is not None:
+        link_mailbox_message_to_tender(mailbox_message, tender, notes="Sent from Tender Designer.")
+    return mailbox_message
+
+
+def send_composed_message(
+    data_dir: Path,
+    recipient_email: str,
+    subject: str,
+    body_text: str,
+    cc_emails: str | None = None,
+    tender: Tender | None = None,
+) -> MailboxMessage:
+    message = build_outbound_message(recipient_email, subject, body_text, cc_emails=cc_emails)
+    _send_message(message)
+    return save_sent_message(data_dir, message, tender=tender)
 
 
 def _build_body_document_name(mailbox_message: MailboxMessage) -> str:
@@ -564,17 +745,24 @@ def _import_mailbox_attachments(data_dir: Path, tender: Tender, mailbox_message:
         )
 
 
-def import_mailbox_message_to_tender(data_dir: Path, mailbox_message: MailboxMessage, tender: Tender) -> MailboxTenderLink:
+def link_mailbox_message_to_tender(mailbox_message: MailboxMessage, tender: Tender, notes: str | None = None) -> MailboxTenderLink:
     existing_link = MailboxTenderLink.query.filter_by(mailbox_message_id=mailbox_message.id, tender_id=tender.id).first()
     if existing_link is not None:
+        return existing_link
+    link = MailboxTenderLink(mailbox_message=mailbox_message, tender=tender, notes=notes)
+    db.session.add(link)
+    return link
+
+
+def import_mailbox_message_to_tender(data_dir: Path, mailbox_message: MailboxMessage, tender: Tender) -> MailboxTenderLink:
+    existing_link = link_mailbox_message_to_tender(mailbox_message, tender, notes="Imported from mailbox.")
+    if existing_link.id is not None:
         return existing_link
     ensure_tender_directories(data_dir, tender.id)
     tender.notes = "\n\n".join(part for part in [tender.notes, mailbox_message.body_text] if part).strip() or None
     _create_body_document(data_dir, tender, mailbox_message)
     _import_mailbox_attachments(data_dir, tender, mailbox_message)
-    link = MailboxTenderLink(mailbox_message=mailbox_message, tender=tender, notes="Imported from mailbox.")
-    db.session.add(link)
-    return link
+    return existing_link
 
 
 def create_tender_from_mailbox_message(data_dir: Path, mailbox_message: MailboxMessage) -> Tender:
