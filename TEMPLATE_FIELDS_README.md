@@ -43,6 +43,20 @@ Source:
 
 - Combined extracted text from the selected tender documents.
 
+### `question_answer_drafting.md`
+
+Supported placeholders:
+
+- `{{answer_mode}}`
+- `{{question_list}}`
+- `{{document_text}}`
+
+Source:
+
+- `answer_mode`: the drafting mode, currently `draft` or `final_only`
+- `question_list`: rendered tender question list from the current tender
+- `document_text`: combined extracted text from the selected supporting documents
+
 ### `chat_action_orchestrator.md`
 
 Supported placeholders:
@@ -70,7 +84,7 @@ Source:
 
 - `page_context`: serialized summary of the current screen context
 - `tender_context`: serialized summary of the active tender, if one is open
-- `document_text_context`: selected tender document text, truncated for chat context
+- `document_text_context`: selected tender document text, truncated for chat context; this may also include mailbox-related context depending on the current page
 - `user_message`: the message typed by the user into chat
 
 ### `computer_finder_query_planning.md`
@@ -108,6 +122,8 @@ Source:
 - `search_results`: site-restricted search result snippets plus readable page text collected before Ollama writes the recommendation
 
 ## RFQ Template
+
+The application labels these user-facing drafts as RFI flows in most screens, but the underlying template filenames and model names still use `rfq`.
 
 ### `rfq_email_body.md`
 
