@@ -15,7 +15,7 @@ class Config:
         f"sqlite:///{BASE_DIR / 'tender_designer.db'}",
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    SQLALCHEMY_ENGINE_OPTIONS = {"connect_args": {"check_same_thread": False}}
+    SQLALCHEMY_ENGINE_OPTIONS = {"connect_args": {"check_same_thread": False, "timeout": 30}}
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024
     DATA_DIR = Path(os.environ.get("DATA_DIR", DATA_DIR))
     OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://192.168.1.249:11434")

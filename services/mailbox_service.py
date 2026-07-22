@@ -6,6 +6,7 @@ import mimetypes
 import re
 import shutil
 import smtplib
+import time
 import uuid
 from datetime import datetime
 from email import policy
@@ -16,6 +17,7 @@ from pathlib import Path
 
 from database import db
 from models import MailboxAttachment, MailboxMessage, MailboxTenderLink, Tender, TenderDocument
+from sqlalchemy.exc import OperationalError
 from services.document_extraction import extract_text
 from services.file_storage import ensure_tender_directories, save_tender_bytes
 from services.settings_service import get_setting
@@ -133,6 +135,26 @@ def _trash_folder_name(folders: list[str]) -> str | None:
     return None
 
 
+def _is_locked_database_error(exc: Exception) -> bool:
+    return "database is locked" in str(exc).lower()
+
+
+def _commit_with_retry(max_attempts: int = 3, delay_seconds: float = 0.35) -> None:
+    last_error: OperationalError | None = None
+    for attempt in range(max_attempts):
+        try:
+            db.session.commit()
+            return
+        except OperationalError as exc:
+            db.session.rollback()
+            if not _is_locked_database_error(exc) or attempt == max_attempts - 1:
+                raise
+            last_error = exc
+            time.sleep(delay_seconds * (attempt + 1))
+    if last_error is not None:
+        raise last_error
+
+
 def _save_message_payload(data_dir: Path, mailbox_message: MailboxMessage, raw_bytes: bytes) -> None:
     message_dir = _message_storage_dir(data_dir, mailbox_message)
     raw_path = message_dir / "message.eml"
@@ -247,7 +269,7 @@ def sync_mailbox_folder(data_dir: Path, folder: str) -> dict[str, int]:
                 created += 1
             else:
                 updated += 1
-        db.session.commit()
+            _commit_with_retry()
     finally:
         _close_mailbox(mailbox)
     return {"created": created, "updated": updated}
