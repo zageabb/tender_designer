@@ -11,22 +11,50 @@
 </section>
 
 <div class="card glass-panel">
+  <div class="card-body border-bottom">
+    <div class="row g-3" data-admin-filters>
+      <div class="col-md-4">
+        <label class="form-label">Search All Columns</label>
+        <input class="form-control" type="search" placeholder="Search this table" data-admin-search>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Column Filter</label>
+        <select class="form-select" data-admin-column-filter>
+          <option value="">Any column</option>
+          {% for column in inspector.columns %}
+          <option value="{{ loop.index0 }}">{{ column.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Filter Value</label>
+        <input class="form-control" type="search" placeholder="Contains value" data-admin-column-value>
+      </div>
+      <div class="col-md-2 d-flex align-items-end">
+        <button class="btn btn-outline-secondary w-100" type="button" data-admin-reset>Reset</button>
+      </div>
+    </div>
+  </div>
   <div class="table-responsive">
-    <table class="table table-sm align-middle mb-0">
+    <table class="table table-sm align-middle mb-0" data-admin-table>
       <thead>
         <tr>
           {% for column in inspector.columns %}
-          <th>{{ column.name }}</th>
+          <th>
+            <button class="btn btn-link btn-sm p-0 text-decoration-none" type="button" data-admin-sort-index="{{ loop.index0 }}">
+              {{ column.name }}
+            </button>
+          </th>
           {% endfor %}
           <th class="text-end">Actions</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody data-admin-table-body>
         {% for record in records %}
-        <tr>
+        <tr data-admin-row>
           {% for column in inspector.columns %}
           {% set value = record|attr(column.name) %}
-          <td>
+          <td data-admin-value="{{ (value|string) if value is not none else '' }}">
             {% if value is string %}
               {% if value|length > 160 %}
                 <div class="markdown-rendered text-preview admin-cell-preview markdown-preview" title="{{ value }}">{{ render_markdown_html(value[:160] ~ '...') }}</div>
@@ -50,4 +78,120 @@
     </table>
   </div>
 </div>
+<script>
+  (() => {
+    const table = document.querySelector("[data-admin-table]");
+    const body = document.querySelector("[data-admin-table-body]");
+    if (!table || !body) {
+      return;
+    }
+
+    const searchInput = document.querySelector("[data-admin-search]");
+    const columnFilter = document.querySelector("[data-admin-column-filter]");
+    const columnValueInput = document.querySelector("[data-admin-column-value]");
+    const resetButton = document.querySelector("[data-admin-reset]");
+    const sortButtons = Array.from(document.querySelectorAll("[data-admin-sort-index]"));
+    const rows = Array.from(body.querySelectorAll("tr[data-admin-row]"));
+    let sortIndex = 0;
+    let sortDirection = "asc";
+
+    const cellValue = (row, index) => {
+      const cell = row.children[index];
+      if (!cell) {
+        return "";
+      }
+      return (cell.dataset.adminValue || cell.textContent || "").trim();
+    };
+
+    const compareRows = (left, right) => {
+      const leftRaw = cellValue(left, sortIndex);
+      const rightRaw = cellValue(right, sortIndex);
+      const leftNumber = Number(leftRaw);
+      const rightNumber = Number(rightRaw);
+      const leftDate = Date.parse(leftRaw);
+      const rightDate = Date.parse(rightRaw);
+
+      let leftValue;
+      let rightValue;
+      if (!Number.isNaN(leftNumber) && !Number.isNaN(rightNumber) && leftRaw !== "" && rightRaw !== "") {
+        leftValue = leftNumber;
+        rightValue = rightNumber;
+      } else if (!Number.isNaN(leftDate) && !Number.isNaN(rightDate) && leftRaw !== "" && rightRaw !== "") {
+        leftValue = leftDate;
+        rightValue = rightDate;
+      } else {
+        leftValue = leftRaw.toLowerCase();
+        rightValue = rightRaw.toLowerCase();
+      }
+
+      if (leftValue < rightValue) {
+        return sortDirection === "asc" ? -1 : 1;
+      }
+      if (leftValue > rightValue) {
+        return sortDirection === "asc" ? 1 : -1;
+      }
+      return 0;
+    };
+
+    const matchesFilters = (row) => {
+      const searchValue = (searchInput?.value || "").trim().toLowerCase();
+      const columnIndex = columnFilter?.value || "";
+      const columnSearch = (columnValueInput?.value || "").trim().toLowerCase();
+      const rowText = Array.from(row.children)
+        .slice(0, -1)
+        .map((cell) => (cell.dataset.adminValue || cell.textContent || "").trim().toLowerCase())
+        .join(" ");
+
+      if (searchValue && !rowText.includes(searchValue)) {
+        return false;
+      }
+      if (columnIndex !== "" && columnSearch) {
+        const targetValue = cellValue(row, Number(columnIndex)).toLowerCase();
+        if (!targetValue.includes(columnSearch)) {
+          return false;
+        }
+      }
+      return true;
+    };
+
+    const renderRows = () => {
+      const filteredRows = rows.filter(matchesFilters).sort(compareRows);
+      for (const row of rows) {
+        row.remove();
+      }
+      for (const row of filteredRows) {
+        body.appendChild(row);
+      }
+      for (const row of rows) {
+        row.style.display = filteredRows.includes(row) ? "" : "none";
+      }
+    };
+
+    searchInput?.addEventListener("input", renderRows);
+    columnFilter?.addEventListener("change", renderRows);
+    columnValueInput?.addEventListener("input", renderRows);
+    resetButton?.addEventListener("click", () => {
+      if (searchInput) searchInput.value = "";
+      if (columnFilter) columnFilter.value = "";
+      if (columnValueInput) columnValueInput.value = "";
+      sortIndex = 0;
+      sortDirection = "asc";
+      renderRows();
+    });
+    for (const button of sortButtons) {
+      button.addEventListener("click", () => {
+        const requestedIndex = Number(button.dataset.adminSortIndex || 0);
+        if (sortIndex === requestedIndex) {
+          sortDirection = sortDirection === "asc" ? "desc" : "asc";
+        } else {
+          sortIndex = requestedIndex;
+          sortDirection = "asc";
+        }
+        renderRows();
+      });
+    }
+
+    renderRows();
+  })();
+</script>
 {% endblock %}

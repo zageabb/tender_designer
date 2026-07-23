@@ -28,21 +28,57 @@
     <span>Outstanding Tenders</span>
     <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('tenders.list_tenders') }}">View all</a>
   </div>
+  <div class="card-body border-bottom">
+    <div class="row g-3" data-dashboard-filters>
+      <div class="col-md-4">
+        <label class="form-label">Search</label>
+        <input class="form-control" type="search" placeholder="Tender number or customer" data-dashboard-search>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Status</label>
+        <select class="form-select" data-dashboard-status-filter>
+          <option value="">All statuses</option>
+          {% for tender in outstanding_tenders %}
+          <option value="{{ tender.status }}">{{ tender.status }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Submission Date</label>
+        <select class="form-select" data-dashboard-date-filter>
+          <option value="">Any date</option>
+          <option value="with-date">Has submission date</option>
+          <option value="without-date">Missing submission date</option>
+          <option value="overdue">Overdue</option>
+          <option value="next-30">Next 30 days</option>
+        </select>
+      </div>
+      <div class="col-md-2 d-flex align-items-end">
+        <button class="btn btn-outline-secondary w-100" type="button" data-dashboard-reset>Reset</button>
+      </div>
+    </div>
+  </div>
   <div class="table-responsive">
-    <table class="table align-middle mb-0">
+    <table class="table align-middle mb-0" data-dashboard-table>
       <thead>
         <tr>
-          <th>Tender Number</th>
-          <th>Customer</th>
-          <th>Status</th>
-          <th>Submission Date</th>
-          <th>Value</th>
+          <th><button class="btn btn-link btn-sm p-0 text-decoration-none" type="button" data-dashboard-sort="tenderNumber">Tender Number</button></th>
+          <th><button class="btn btn-link btn-sm p-0 text-decoration-none" type="button" data-dashboard-sort="customerName">Customer</button></th>
+          <th><button class="btn btn-link btn-sm p-0 text-decoration-none" type="button" data-dashboard-sort="status">Status</button></th>
+          <th><button class="btn btn-link btn-sm p-0 text-decoration-none" type="button" data-dashboard-sort="submissionDate">Submission Date</button></th>
+          <th><button class="btn btn-link btn-sm p-0 text-decoration-none" type="button" data-dashboard-sort="tenderValue">Value</button></th>
           <th></th>
         </tr>
       </thead>
-      <tbody>
+      <tbody data-dashboard-table-body>
         {% for tender in outstanding_tenders %}
-        <tr>
+        <tr
+          data-tender-number="{{ tender.tender_number }}"
+          data-customer-name="{{ tender.customer_name }}"
+          data-status="{{ tender.status }}"
+          data-submission-date="{{ tender.submission_date.isoformat() if tender.submission_date else '' }}"
+          data-tender-value="{{ tender.tender_value or 0 }}"
+        >
           <td>{{ tender.tender_number }}</td>
           <td>{{ tender.customer_name }}</td>
           <td>{{ tender.status }}</td>
@@ -57,4 +93,139 @@
     </table>
   </div>
 </div>
+<script>
+  (() => {
+    const table = document.querySelector("[data-dashboard-table]");
+    const body = document.querySelector("[data-dashboard-table-body]");
+    if (!table || !body) {
+      return;
+    }
+
+    const searchInput = document.querySelector("[data-dashboard-search]");
+    const statusFilter = document.querySelector("[data-dashboard-status-filter]");
+    const dateFilter = document.querySelector("[data-dashboard-date-filter]");
+    const resetButton = document.querySelector("[data-dashboard-reset]");
+    const sortButtons = Array.from(document.querySelectorAll("[data-dashboard-sort]"));
+    const rows = Array.from(body.querySelectorAll("tr[data-tender-number]"));
+    const today = new Date("2026-07-23T00:00:00");
+    const nextThirty = new Date("2026-08-22T23:59:59");
+    const statusOrder = [
+      "New",
+      "Documents Uploaded",
+      "Metadata Extracted",
+      "Items Extracted",
+      "RFI Required",
+      "Quoted",
+      "Ready For Review",
+      "Submitted",
+    ];
+    let sortKey = "status";
+    let sortDirection = "asc";
+
+    const uniqueStatuses = [...new Set(rows.map((row) => row.dataset.status).filter(Boolean))];
+    if (statusFilter && statusFilter.options.length <= 1) {
+      for (const status of uniqueStatuses) {
+        const option = document.createElement("option");
+        option.value = status;
+        option.textContent = status;
+        statusFilter.appendChild(option);
+      }
+    }
+
+    const statusRank = (value) => {
+      const index = statusOrder.indexOf(value || "");
+      return index === -1 ? 999 : index;
+    };
+
+    const compareRows = (left, right) => {
+      let leftValue = left.dataset[sortKey] || "";
+      let rightValue = right.dataset[sortKey] || "";
+      if (sortKey === "submissionDate") {
+        leftValue = leftValue || "9999-12-31";
+        rightValue = rightValue || "9999-12-31";
+      } else if (sortKey === "tenderValue") {
+        leftValue = Number(leftValue || 0);
+        rightValue = Number(rightValue || 0);
+      } else if (sortKey === "status") {
+        leftValue = statusRank(leftValue);
+        rightValue = statusRank(rightValue);
+      } else {
+        leftValue = leftValue.toLowerCase();
+        rightValue = rightValue.toLowerCase();
+      }
+      if (leftValue < rightValue) {
+        return sortDirection === "asc" ? -1 : 1;
+      }
+      if (leftValue > rightValue) {
+        return sortDirection === "asc" ? 1 : -1;
+      }
+      return 0;
+    };
+
+    const matchesFilters = (row) => {
+      const searchValue = (searchInput?.value || "").trim().toLowerCase();
+      const statusValue = statusFilter?.value || "";
+      const dateValue = dateFilter?.value || "";
+      const combinedText = `${row.dataset.tenderNumber} ${row.dataset.customerName}`.toLowerCase();
+      if (searchValue && !combinedText.includes(searchValue)) {
+        return false;
+      }
+      if (statusValue && row.dataset.status !== statusValue) {
+        return false;
+      }
+      const submissionDate = row.dataset.submissionDate ? new Date(`${row.dataset.submissionDate}T00:00:00`) : null;
+      if (dateValue === "with-date" && !submissionDate) {
+        return false;
+      }
+      if (dateValue === "without-date" && submissionDate) {
+        return false;
+      }
+      if (dateValue === "overdue" && (!submissionDate || submissionDate >= today)) {
+        return false;
+      }
+      if (dateValue === "next-30" && (!submissionDate || submissionDate < today || submissionDate > nextThirty)) {
+        return false;
+      }
+      return true;
+    };
+
+    const renderRows = () => {
+      const filteredRows = rows.filter(matchesFilters).sort(compareRows);
+      for (const row of rows) {
+        row.remove();
+      }
+      for (const row of filteredRows) {
+        body.appendChild(row);
+      }
+      for (const row of rows) {
+        row.style.display = filteredRows.includes(row) ? "" : "none";
+      }
+    };
+
+    searchInput?.addEventListener("input", renderRows);
+    statusFilter?.addEventListener("change", renderRows);
+    dateFilter?.addEventListener("change", renderRows);
+    resetButton?.addEventListener("click", () => {
+      if (searchInput) searchInput.value = "";
+      if (statusFilter) statusFilter.value = "";
+      if (dateFilter) dateFilter.value = "";
+      sortKey = "status";
+      sortDirection = "asc";
+      renderRows();
+    });
+    for (const button of sortButtons) {
+      button.addEventListener("click", () => {
+        const requestedKey = button.dataset.dashboardSort || "status";
+        if (sortKey === requestedKey) {
+          sortDirection = sortDirection === "asc" ? "desc" : "asc";
+        } else {
+          sortKey = requestedKey;
+          sortDirection = requestedKey === "status" || requestedKey === "submissionDate" || requestedKey === "tenderNumber" || requestedKey === "customerName" ? "asc" : "desc";
+        }
+        renderRows();
+      });
+    }
+    renderRows();
+  })();
+</script>
 {% endblock %}
