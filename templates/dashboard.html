@@ -25,7 +25,7 @@
 
 <div class="card glass-panel">
   <div class="card-header d-flex justify-content-between align-items-center">
-    <span>Recent Tenders</span>
+    <span>Outstanding Tenders</span>
     <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('tenders.list_tenders') }}">View all</a>
   </div>
   <div class="table-responsive">
@@ -35,21 +35,23 @@
           <th>Tender Number</th>
           <th>Customer</th>
           <th>Status</th>
+          <th>Submission Date</th>
           <th>Value</th>
           <th></th>
         </tr>
       </thead>
       <tbody>
-        {% for tender in recent_tenders %}
+        {% for tender in outstanding_tenders %}
         <tr>
           <td>{{ tender.tender_number }}</td>
           <td>{{ tender.customer_name }}</td>
           <td>{{ tender.status }}</td>
+          <td>{{ tender.submission_date.isoformat() if tender.submission_date else '-' }}</td>
           <td>{{ tender.currency }} {{ tender.tender_value or 0 }}</td>
           <td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('tenders.detail_tender', tender_id=tender.id) }}">View</a></td>
         </tr>
         {% else %}
-        <tr><td colspan="5" class="text-muted">No tenders yet.</td></tr>
+        <tr><td colspan="6" class="text-muted">No outstanding tenders right now.</td></tr>
         {% endfor %}
       </tbody>
     </table>

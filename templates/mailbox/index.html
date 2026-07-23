@@ -139,7 +139,7 @@
     <div class="table-responsive">
       <table class="table align-middle mb-0">
         <thead>
-          <tr><th><input class="form-check-input" type="checkbox" data-mailbox-select-all></th><th>Latest</th><th>Messages</th><th>Unread</th><th>Participants</th><th>Subject</th><th>Folder</th></tr>
+          <tr><th><input class="form-check-input" type="checkbox" data-mailbox-select-all></th><th>Latest</th><th>Messages</th><th>Unread</th><th>Participants</th><th>Subject</th><th>Linked Tenders</th><th>Folder</th></tr>
         </thead>
         <tbody>
           {% for conversation in conversation_summaries %}
@@ -154,10 +154,19 @@
               <div class="fw-semibold"><a class="link-dark text-decoration-none" href="{{ url_for('mailbox.view_message', message_id=message.id, tender_id=tender.id if tender else None, folder=selected_folder or message.mailbox_folder) }}">{{ message.subject }}</a></div>
               <div class="small text-muted">{{ message.snippet or '-' }}</div>
             </td>
+            <td>
+              {% if message.tender_links %}
+                {% for link in message.tender_links %}
+                <div><a class="link-dark text-decoration-none" href="{{ url_for('tenders.detail_tender', tender_id=link.tender_id) }}">{{ link.tender.tender_number }}</a></div>
+                {% endfor %}
+              {% else %}
+              <span class="text-muted">-</span>
+              {% endif %}
+            </td>
             <td>{{ message.mailbox_folder or '-' }}</td>
           </tr>
           {% else %}
-          <tr><td colspan="7" class="text-muted">No mailbox conversations have been synced yet.</td></tr>
+          <tr><td colspan="8" class="text-muted">No mailbox conversations have been synced yet.</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -166,7 +175,7 @@
     <div class="table-responsive">
       <table class="table align-middle mb-0">
         <thead>
-          <tr><th><input class="form-check-input" type="checkbox" data-mailbox-select-all></th><th>Received</th><th>Folder</th><th>From</th><th>Subject</th><th>Attachments</th><th>Status</th></tr>
+          <tr><th><input class="form-check-input" type="checkbox" data-mailbox-select-all></th><th>Received</th><th>Folder</th><th>From</th><th>Subject</th><th>Linked Tenders</th><th>Attachments</th><th>Status</th></tr>
         </thead>
         <tbody>
           {% for message in messages %}
@@ -179,6 +188,15 @@
               <div class="fw-semibold"><a class="link-dark text-decoration-none" href="{{ url_for('mailbox.view_message', message_id=message.id, tender_id=tender.id if tender else None, folder=selected_folder or message.mailbox_folder) }}">{{ message.subject }}</a></div>
               <div class="small text-muted">{{ message.snippet or '-' }}</div>
             </td>
+            <td>
+              {% if message.tender_links %}
+                {% for link in message.tender_links %}
+                <div><a class="link-dark text-decoration-none" href="{{ url_for('tenders.detail_tender', tender_id=link.tender_id) }}">{{ link.tender.tender_number }}</a></div>
+                {% endfor %}
+              {% else %}
+              <span class="text-muted">-</span>
+              {% endif %}
+            </td>
             <td>{{ message.attachments|length }}</td>
             <td>
               {% if not message.is_read %}<span class="badge text-bg-warning">New</span>{% else %}<span class="badge text-bg-light">Read</span>{% endif %}
@@ -186,7 +204,7 @@
             </td>
           </tr>
           {% else %}
-          <tr><td colspan="7" class="text-muted">No mailbox messages have been synced yet.</td></tr>
+          <tr><td colspan="8" class="text-muted">No mailbox messages have been synced yet.</td></tr>
           {% endfor %}
         </tbody>
       </table>

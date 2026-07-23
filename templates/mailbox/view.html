@@ -56,6 +56,18 @@
               {% if not mailbox_message.is_read %}<span class="badge text-bg-warning ms-2">New</span>{% endif %}
             </div>
           </div>
+          <div class="col-md-6">
+            <div class="small text-muted">Linked Tenders</div>
+            <div class="fw-semibold">
+              {% if mailbox_message.tender_links %}
+                {% for link in mailbox_message.tender_links %}
+                <div><a class="link-dark text-decoration-none" href="{{ url_for('tenders.detail_tender', tender_id=link.tender_id) }}">{{ link.tender.tender_number }}</a></div>
+                {% endfor %}
+              {% else %}
+              -
+              {% endif %}
+            </div>
+          </div>
           <div class="col-12">
             <div class="small text-muted">To</div>
             <div class="fw-semibold">{{ mailbox_message.recipient_emails or '-' }}</div>
