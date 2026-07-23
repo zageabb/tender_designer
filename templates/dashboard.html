@@ -38,9 +38,6 @@
         <label class="form-label">Status</label>
         <select class="form-select" data-dashboard-status-filter>
           <option value="">All statuses</option>
-          {% for tender in outstanding_tenders %}
-          <option value="{{ tender.status }}">{{ tender.status }}</option>
-          {% endfor %}
         </select>
       </div>
       <div class="col-md-3">

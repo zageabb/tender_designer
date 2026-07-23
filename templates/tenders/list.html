@@ -21,9 +21,6 @@
         <label class="form-label">Status</label>
         <select class="form-select" data-tenders-status-filter>
           <option value="">All statuses</option>
-          {% for tender in tenders %}
-          <option value="{{ tender.status }}">{{ tender.status }}</option>
-          {% endfor %}
         </select>
       </div>
       <div class="col-md-3">
