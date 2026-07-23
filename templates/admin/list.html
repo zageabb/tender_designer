@@ -19,8 +19,7 @@
       </div>
       <div class="col-md-3">
         <label class="form-label">Column Filter</label>
-        <select class="form-select" data-admin-column-filter>
-          <option value="">Any column</option>
+        <select class="form-select" data-admin-column-filter multiple size="5" aria-label="Filter across one or more columns">
           {% for column in inspector.columns %}
           <option value="{{ loop.index0 }}">{{ column.name }}</option>
           {% endfor %}
@@ -95,6 +94,16 @@
     let sortIndex = 0;
     let sortDirection = "asc";
 
+    const selectedValues = (select) => Array.from(select?.selectedOptions || [])
+      .map((option) => option.value)
+      .filter((value) => value !== "");
+
+    const clearSelections = (select) => {
+      for (const option of Array.from(select?.options || [])) {
+        option.selected = false;
+      }
+    };
+
     const cellValue = (row, index) => {
       const cell = row.children[index];
       if (!cell) {
@@ -135,7 +144,7 @@
 
     const matchesFilters = (row) => {
       const searchValue = (searchInput?.value || "").trim().toLowerCase();
-      const columnIndex = columnFilter?.value || "";
+      const columnIndexes = selectedValues(columnFilter).map((value) => Number(value));
       const columnSearch = (columnValueInput?.value || "").trim().toLowerCase();
       const rowText = Array.from(row.children)
         .slice(0, -1)
@@ -145,9 +154,12 @@
       if (searchValue && !rowText.includes(searchValue)) {
         return false;
       }
-      if (columnIndex !== "" && columnSearch) {
-        const targetValue = cellValue(row, Number(columnIndex)).toLowerCase();
-        if (!targetValue.includes(columnSearch)) {
+      if (columnIndexes.length && columnSearch) {
+        const matchesSelectedColumns = columnIndexes.some((columnIndex) => {
+          const targetValue = cellValue(row, columnIndex).toLowerCase();
+          return targetValue.includes(columnSearch);
+        });
+        if (!matchesSelectedColumns) {
           return false;
         }
       }
@@ -172,7 +184,7 @@
     columnValueInput?.addEventListener("input", renderRows);
     resetButton?.addEventListener("click", () => {
       if (searchInput) searchInput.value = "";
-      if (columnFilter) columnFilter.value = "";
+      clearSelections(columnFilter);
       if (columnValueInput) columnValueInput.value = "";
       sortIndex = 0;
       sortDirection = "asc";

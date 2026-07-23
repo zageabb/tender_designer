@@ -36,8 +36,7 @@
         </div>
         <div class="col-md-3">
           <label class="form-label">Column Filter</label>
-          <select class="form-select" data-generic-table-column>
-            <option value="">Any column</option>
+          <select class="form-select" data-generic-table-column multiple size="5" aria-label="Filter across one or more columns">
           </select>
         </div>
         <div class="col-md-3">
@@ -61,12 +60,18 @@
       columnSelect.appendChild(option);
     }
 
+    const clearSelections = (select) => {
+      for (const option of Array.from(select?.options || [])) {
+        option.selected = false;
+      }
+    };
+
     controls.querySelector("[data-generic-table-search]")?.addEventListener("input", renderRows);
     controls.querySelector("[data-generic-table-column]")?.addEventListener("change", renderRows);
     controls.querySelector("[data-generic-table-value]")?.addEventListener("input", renderRows);
     controls.querySelector("[data-generic-table-reset]")?.addEventListener("click", () => {
       controls.querySelector("[data-generic-table-search]").value = "";
-      controls.querySelector("[data-generic-table-column]").value = "";
+      clearSelections(controls.querySelector("[data-generic-table-column]"));
       controls.querySelector("[data-generic-table-value]").value = "";
       renderRows(true);
     });
@@ -112,6 +117,9 @@
     let controls = null;
 
     const readCellText = (row, index) => (row.cells[index]?.textContent || "").replace(/\s+/g, " ").trim();
+    const selectedValues = (select) => Array.from(select?.selectedOptions || [])
+      .map((option) => option.value)
+      .filter((value) => value !== "");
 
     const renderRows = (resetSort = false) => {
       if (resetSort) {
@@ -119,7 +127,7 @@
         sortDirection = "asc";
       }
       const searchValue = (controls?.querySelector("[data-generic-table-search]")?.value || "").trim().toLowerCase();
-      const filterColumn = controls?.querySelector("[data-generic-table-column]")?.value || "";
+      const filterColumns = selectedValues(controls?.querySelector("[data-generic-table-column]")).map((value) => Number(value));
       const filterValue = (controls?.querySelector("[data-generic-table-value]")?.value || "").trim().toLowerCase();
 
       const filteredRows = allRows.filter((row) => {
@@ -129,9 +137,12 @@
         if (searchValue && !rowText.includes(searchValue)) {
           return false;
         }
-        if (filterColumn !== "" && filterValue) {
-          const target = readCellText(row, Number(filterColumn)).toLowerCase();
-          if (!target.includes(filterValue)) {
+        if (filterColumns.length && filterValue) {
+          const matchesSelectedColumns = filterColumns.some((filterColumn) => {
+            const target = readCellText(row, filterColumn).toLowerCase();
+            return target.includes(filterValue);
+          });
+          if (!matchesSelectedColumns) {
             return false;
           }
         }

@@ -36,14 +36,13 @@
       </div>
       <div class="col-md-3">
         <label class="form-label">Status</label>
-        <select class="form-select" data-dashboard-status-filter>
+        <select class="form-select" data-dashboard-status-filter multiple size="4" aria-label="Filter by one or more statuses">
           <option value="">All statuses</option>
         </select>
       </div>
       <div class="col-md-3">
         <label class="form-label">Submission Date</label>
-        <select class="form-select" data-dashboard-date-filter>
-          <option value="">Any date</option>
+        <select class="form-select" data-dashboard-date-filter multiple size="5" aria-label="Filter by one or more submission date groups">
           <option value="with-date">Has submission date</option>
           <option value="without-date">Missing submission date</option>
           <option value="overdue">Overdue</option>
@@ -119,8 +118,18 @@
     let sortKey = "status";
     let sortDirection = "asc";
 
+    const selectedValues = (select) => Array.from(select?.selectedOptions || [])
+      .map((option) => option.value)
+      .filter(Boolean);
+
+    const clearSelections = (select) => {
+      for (const option of Array.from(select?.options || [])) {
+        option.selected = false;
+      }
+    };
+
     const uniqueStatuses = [...new Set(rows.map((row) => row.dataset.status).filter(Boolean))];
-    if (statusFilter && statusFilter.options.length <= 1) {
+    if (statusFilter && statusFilter.options.length === 1) {
       for (const status of uniqueStatuses) {
         const option = document.createElement("option");
         option.value = status;
@@ -161,27 +170,35 @@
 
     const matchesFilters = (row) => {
       const searchValue = (searchInput?.value || "").trim().toLowerCase();
-      const statusValue = statusFilter?.value || "";
-      const dateValue = dateFilter?.value || "";
+      const statusValues = selectedValues(statusFilter);
+      const dateValues = selectedValues(dateFilter);
       const combinedText = `${row.dataset.tenderNumber} ${row.dataset.customerName}`.toLowerCase();
       if (searchValue && !combinedText.includes(searchValue)) {
         return false;
       }
-      if (statusValue && row.dataset.status !== statusValue) {
+      if (statusValues.length && !statusValues.includes(row.dataset.status || "")) {
         return false;
       }
       const submissionDate = row.dataset.submissionDate ? new Date(`${row.dataset.submissionDate}T00:00:00`) : null;
-      if (dateValue === "with-date" && !submissionDate) {
-        return false;
-      }
-      if (dateValue === "without-date" && submissionDate) {
-        return false;
-      }
-      if (dateValue === "overdue" && (!submissionDate || submissionDate >= today)) {
-        return false;
-      }
-      if (dateValue === "next-30" && (!submissionDate || submissionDate < today || submissionDate > nextThirty)) {
-        return false;
+      if (dateValues.length) {
+        const matchesDateFilter = dateValues.some((dateValue) => {
+          if (dateValue === "with-date") {
+            return Boolean(submissionDate);
+          }
+          if (dateValue === "without-date") {
+            return !submissionDate;
+          }
+          if (dateValue === "overdue") {
+            return Boolean(submissionDate) && submissionDate < today;
+          }
+          if (dateValue === "next-30") {
+            return Boolean(submissionDate) && submissionDate >= today && submissionDate <= nextThirty;
+          }
+          return true;
+        });
+        if (!matchesDateFilter) {
+          return false;
+        }
       }
       return true;
     };
@@ -204,8 +221,8 @@
     dateFilter?.addEventListener("change", renderRows);
     resetButton?.addEventListener("click", () => {
       if (searchInput) searchInput.value = "";
-      if (statusFilter) statusFilter.value = "";
-      if (dateFilter) dateFilter.value = "";
+      clearSelections(statusFilter);
+      clearSelections(dateFilter);
       sortKey = "status";
       sortDirection = "asc";
       renderRows();
