@@ -2,11 +2,16 @@
 {% block title %}{{ tender.tender_number }} | Tender Designer{% endblock %}
 {% block content %}
 <div data-extraction-jobs-root data-tender-id="{{ tender.id }}">
-<section class="hero-card mb-4">
+<section class="hero-card tender-hero tender-health-{{ tender_signal.css_modifier }} mb-4">
   <div>
     <span class="eyebrow">Tender Detail</span>
     <h1 class="display-title">{{ tender.tender_number }}{% if tender.title %} - {{ tender.title }}{% endif %}</h1>
     <p class="hero-copy mb-0">{{ tender.customer_name }} | {{ tender.status }} | {{ tender.currency }} {{ tender.tender_value or 0 }}</p>
+    <div class="d-flex gap-2 flex-wrap mt-3">
+      <span class="badge tender-signal-badge tender-signal-badge-{{ tender_signal.css_modifier }}">{{ tender_signal.label }}</span>
+      {% if tender.submission_date %}<span class="badge text-bg-light">Submission {{ tender.submission_date.isoformat() }}</span>{% endif %}
+      {% if tender.award_date %}<span class="badge text-bg-light">Award {{ tender.award_date.isoformat() }}</span>{% endif %}
+    </div>
   </div>
   <div class="hero-actions">
     <a class="btn btn-outline-dark btn-lg" href="{{ url_for('tenders.edit_tender', tender_id=tender.id) }}">Edit Tender</a>
@@ -17,6 +22,25 @@
     </form>
   </div>
 </section>
+
+<div class="card glass-panel tender-signal-summary tender-health-{{ tender_signal.css_modifier }} mb-4">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+      <div>
+        <div class="small text-uppercase text-muted mb-2">Tender Health</div>
+        <h2 class="h4 mb-2">{{ tender_signal.summary }}</h2>
+        <div class="text-muted">{{ tender_signal.detail }}</div>
+      </div>
+      <div class="tender-signal-legend tender-signal-legend-compact">
+        {% for legend in signal_legend %}
+        <div class="tender-signal-chip tender-signal-chip-{{ legend.key }}">
+          <strong>{{ legend.label }}</strong>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
 
 <div class="action-bar mb-4">
   <form method="post" action="{{ url_for('tenders.run_extraction_task', tender_id=tender.id, task_name='metadata') }}" data-llm-request="Metadata extraction started. Reviewing selected tender documents now." data-requires-doc-selection="true">

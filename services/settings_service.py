@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from models import AppSetting
 
 
@@ -106,6 +108,26 @@ DEFAULT_SETTINGS = {
         "value": "true",
         "description": "Use STARTTLS for SMTP connections when sending directly.",
     },
+    "mail_auto_sync_enabled": {
+        "value": "true",
+        "description": "Automatically queue mailbox background sync jobs on a schedule.",
+    },
+    "mail_auto_sync_interval_minutes": {
+        "value": "10",
+        "description": "How often the scheduler should queue a background mailbox sync job.",
+    },
+    "tender_warning_admin_emails": {
+        "value": "abbot.server@gmail.com",
+        "description": "One admin warning email per line, comma, or semicolon. These recipients receive tender deadline warning emails.",
+    },
+    "tender_monitor_enabled": {
+        "value": "true",
+        "description": "Enable the background tender monitor agent that emails admin recipients when deadlines or workflow states become risky.",
+    },
+    "tender_monitor_schedule_time": {
+        "value": "00:00",
+        "description": "Daily 24-hour time when the tender monitor should trigger automatically.",
+    },
     "vector_store_path": {
         "value": "data/vector_store",
         "description": "Local vector store path for future RAG support.",
@@ -195,3 +217,18 @@ def get_task_model(task_name: str, fallback: str | None = None) -> str | None:
     if setting_key is None:
         return fallback
     return get_setting(setting_key, fallback)
+
+
+def parse_email_recipients(raw_value: str | None) -> list[str]:
+    seen: set[str] = set()
+    recipients: list[str] = []
+    for token in re.split(r"[\n,;]+", raw_value or ""):
+        value = token.strip()
+        if not value:
+            continue
+        lowered = value.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        recipients.append(value)
+    return recipients

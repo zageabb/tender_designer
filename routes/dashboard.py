@@ -7,6 +7,7 @@ from flask import Blueprint, current_app, flash, redirect, render_template, url_
 from database import db
 from models import RFQ, Tender, TenderQuestion
 from services.sample_data import seed_sample_data
+from services.tender_health import evaluate_tender_health, get_signal_legend
 
 
 dashboard_bp = Blueprint("dashboard", __name__)
@@ -25,6 +26,7 @@ OUTSTANDING_TENDER_STATUS_ORDER = {
 
 @dashboard_bp.route("/")
 def index():
+    today = date(2026, 7, 23)
     active_tenders = Tender.query.filter(Tender.status.notin_(["Awarded", "Lost", "Cancelled"])).count()
     tenders_awaiting_review = Tender.query.filter(Tender.status.in_(["Metadata Extracted", "Items Extracted", "Ready For Review"])).count()
     rfqs_waiting = RFQ.query.filter(RFQ.status.in_(["Draft", "Downloaded", "Sent Manually"])).count()
@@ -41,6 +43,7 @@ def index():
             tender.tender_number or "",
         ),
     )[:12]
+    tender_health = {tender.id: evaluate_tender_health(tender, today=today) for tender in outstanding_tenders}
     chat_context = {"page": "dashboard"}
     return render_template(
         "dashboard.html",
@@ -49,6 +52,9 @@ def index():
         rfqs_waiting=rfqs_waiting,
         unanswered_questions=unanswered_questions,
         outstanding_tenders=outstanding_tenders,
+        tender_health=tender_health,
+        signal_legend=get_signal_legend(),
+        today_iso=today.isoformat(),
         chat_context=chat_context,
     )
 

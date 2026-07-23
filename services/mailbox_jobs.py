@@ -9,6 +9,7 @@ from flask import Flask
 from database import db
 from models import MailboxSyncJob
 from services.mailbox_service import sync_mailbox, sync_mailbox_folder
+from services.settings_service import get_setting
 
 
 _job_queue: queue.Queue[int] = queue.Queue()
@@ -20,6 +21,19 @@ _active_job_id: int | None = None
 
 def enqueue_mailbox_sync_job(job_id: int) -> None:
     _job_queue.put(job_id)
+
+
+def queue_mailbox_sync_job(mailbox_folder: str | None = None, source_label: str = "Mailbox sync") -> MailboxSyncJob:
+    label = (mailbox_folder or get_setting("mail_inbox_folder", "INBOX") or "INBOX").strip() or "INBOX"
+    job = MailboxSyncJob(
+        mailbox_folder=label,
+        status="queued",
+        summary_message=f"{source_label} queued for {label}.",
+    )
+    db.session.add(job)
+    db.session.commit()
+    enqueue_mailbox_sync_job(job.id)
+    return job
 
 
 def get_mailbox_worker_status() -> dict[str, object]:

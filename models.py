@@ -40,6 +40,7 @@ class Tender(TimestampMixin, db.Model):
     llm_runs = db.relationship("LLMRunLog", cascade="all, delete-orphan")
     extraction_jobs = db.relationship("ExtractionJob", back_populates="tender", cascade="all, delete-orphan")
     mailbox_links = db.relationship("MailboxTenderLink", back_populates="tender", cascade="all, delete-orphan")
+    monitor_alerts = db.relationship("TenderMonitorAlert", back_populates="tender", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<Tender {self.tender_number}>"
@@ -316,6 +317,22 @@ class MailboxSyncJob(TimestampMixin, db.Model):
     error_message = db.Column(db.Text)
     started_at = db.Column(db.DateTime)
     completed_at = db.Column(db.DateTime)
+
+
+class TenderMonitorAlert(TimestampMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    tender_id = db.Column(db.Integer, db.ForeignKey("tender.id"), nullable=False)
+    mailbox_message_id = db.Column(db.Integer)
+    notification_key = db.Column(db.String(255), unique=True, nullable=False)
+    severity = db.Column(db.String(50), nullable=False)
+    signal_label = db.Column(db.String(255), nullable=False)
+    summary = db.Column(db.Text)
+    recipient_emails = db.Column(db.Text)
+    status = db.Column(db.String(50), default="queued", nullable=False)
+    sent_at = db.Column(db.DateTime)
+    last_error = db.Column(db.Text)
+
+    tender = db.relationship("Tender", back_populates="monitor_alerts")
 
 
 class ChatSession(TimestampMixin, db.Model):

@@ -32,6 +32,7 @@ from models import (
     TenderEmail,
     TenderEmailDocument,
     TenderItem,
+    TenderMonitorAlert,
     TenderQuestion,
     TenderSubItem,
 )
@@ -42,6 +43,13 @@ from services.extraction_jobs import (
     pause_extraction_worker,
     resume_extraction_worker,
     retry_extraction_job,
+)
+from services.tender_monitor import (
+    get_tender_monitor_status,
+    pause_tender_monitor,
+    request_tender_monitor_scan,
+    resume_tender_monitor,
+    start_tender_monitor_worker,
 )
 
 
@@ -73,6 +81,7 @@ ADMIN_MODELS = {
     "mailbox-tender-links": MailboxTenderLink,
     "mailbox-deletion-requests": MailboxDeletionRequest,
     "mailbox-sync-jobs": MailboxSyncJob,
+    "tender-monitor-alerts": TenderMonitorAlert,
 }
 
 ADMIN_MODEL_META = {
@@ -101,6 +110,7 @@ ADMIN_MODEL_META = {
     "mailbox-tender-links": {"label": "Mailbox Tender Links", "description": "Links showing which mailbox messages were imported into which tenders."},
     "mailbox-deletion-requests": {"label": "Mailbox Deletion Requests", "description": "Queued Gmail deletion sync requests waiting to be applied remotely."},
     "mailbox-sync-jobs": {"label": "Mailbox Sync Jobs", "description": "Background Gmail mailbox sync jobs and their completion state."},
+    "tender-monitor-alerts": {"label": "Tender Monitor Alerts", "description": "Automatic admin warning emails raised by the tender monitor agent."},
 }
 
 
@@ -178,17 +188,22 @@ def job_dashboard():
             names = []
         job.document_names_text = ", ".join(names) if names else "-"
     worker_status = get_worker_status()
+    tender_monitor_status = get_tender_monitor_status()
+    recent_alerts = TenderMonitorAlert.query.order_by(TenderMonitorAlert.created_at.desc()).limit(20).all()
     stats = {
         "queued": ExtractionJob.query.filter_by(status="queued").count(),
         "running": ExtractionJob.query.filter(ExtractionJob.status.in_(["running", "cancelling"])).count(),
         "completed": ExtractionJob.query.filter_by(status="completed").count(),
         "failed": ExtractionJob.query.filter_by(status="failed").count(),
         "cancelled": ExtractionJob.query.filter_by(status="cancelled").count(),
+        "monitor_alerts": TenderMonitorAlert.query.filter_by(status="sent").count(),
     }
     return render_template(
         "admin/jobs.html",
         jobs=jobs,
         worker_status=worker_status,
+        tender_monitor_status=tender_monitor_status,
+        recent_alerts=recent_alerts,
         stats=stats,
         chat_context={"page": "admin_jobs"},
     )
@@ -206,6 +221,30 @@ def resume_jobs_worker():
     ensure_extraction_worker(current_app)
     resume_extraction_worker()
     flash("Background extraction worker resumed.", "success")
+    return redirect(url_for("admin.job_dashboard"))
+
+
+@admin_bp.route("/jobs/monitor/pause", methods=["POST"])
+def pause_monitor_worker():
+    pause_tender_monitor()
+    flash("Tender monitor paused.", "warning")
+    return redirect(url_for("admin.job_dashboard"))
+
+
+@admin_bp.route("/jobs/monitor/resume", methods=["POST"])
+def resume_monitor_worker():
+    start_tender_monitor_worker(current_app)
+    resume_tender_monitor()
+    flash("Tender monitor resumed.", "success")
+    return redirect(url_for("admin.job_dashboard"))
+
+
+@admin_bp.route("/jobs/monitor/run", methods=["POST"])
+def run_monitor_worker():
+    start_tender_monitor_worker(current_app)
+    resume_tender_monitor()
+    request_tender_monitor_scan()
+    flash("Tender monitor scan requested. Refresh shortly to see updated alert results.", "success")
     return redirect(url_for("admin.job_dashboard"))
 
 

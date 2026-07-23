@@ -6,7 +6,7 @@ from flask import Blueprint, current_app, flash, redirect, render_template, requ
 
 from database import db
 from models import MailboxAttachment, MailboxMessage, MailboxSyncJob, Tender
-from services.mailbox_jobs import enqueue_mailbox_sync_job, get_mailbox_worker_status
+from services.mailbox_jobs import get_mailbox_worker_status, queue_mailbox_sync_job
 from services.mailbox_service import (
     _commit_with_retry,
     archive_mailbox_message,
@@ -139,14 +139,7 @@ def sync():
     view_mode = (request.form.get("mode") or "messages").strip().lower()
     include_archived = request.form.get("include_archived", type=int) == 1
     label = selected_folder or "INBOX"
-    job = MailboxSyncJob(
-        mailbox_folder=selected_folder or "INBOX",
-        status="queued",
-        summary_message=f"Mailbox sync queued for {label}.",
-    )
-    db.session.add(job)
-    db.session.commit()
-    enqueue_mailbox_sync_job(job.id)
+    queue_mailbox_sync_job(selected_folder or "INBOX", source_label="Mailbox sync")
     flash(f"Mailbox sync queued for {label}. The page will refresh immediately while Gmail sync continues in the background.", "success")
     return redirect(url_for("mailbox.index", **_route_kwargs(tender_id, selected_folder, view_mode, include_archived)))
 

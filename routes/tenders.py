@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -19,6 +19,7 @@ from services.file_storage import ensure_tender_directories, save_tender_bytes, 
 from services.chat_service import add_chat_message, get_or_create_session
 from services.markdown_tools import extracted_text_suffix, looks_like_markdown, render_markdown_html
 from services.settings_service import get_task_model
+from services.tender_health import evaluate_tender_health, get_signal_legend
 from services.upload_ingestion import expand_upload_entries
 
 
@@ -75,6 +76,7 @@ def _item_redirect(item_id: int, anchor: str | None = None):
 
 @tenders_bp.route("/")
 def list_tenders():
+    today = date(2026, 7, 23)
     tenders = (
         Tender.query.order_by(
             Tender.submission_date.is_(None),
@@ -82,7 +84,15 @@ def list_tenders():
             Tender.updated_at.desc(),
         ).all()
     )
-    return render_template("tenders/list.html", tenders=tenders, chat_context={"page": "tender_list"})
+    tender_health = {tender.id: evaluate_tender_health(tender, today=today) for tender in tenders}
+    return render_template(
+        "tenders/list.html",
+        tenders=tenders,
+        tender_health=tender_health,
+        signal_legend=get_signal_legend(),
+        today_iso=today.isoformat(),
+        chat_context={"page": "tender_list"},
+    )
 
 
 @tenders_bp.route("/new", methods=["GET", "POST"])
@@ -114,6 +124,7 @@ def create_tender():
 
 @tenders_bp.route("/<int:tender_id>")
 def detail_tender(tender_id: int):
+    today = date(2026, 7, 23)
     tender = Tender.query.get_or_404(tender_id)
     extraction_runs = LLMRunLog.query.filter_by(tender_id=tender.id).order_by(LLMRunLog.created_at.desc()).limit(6).all()
     extraction_jobs = (
@@ -140,9 +151,11 @@ def detail_tender(tender_id: int):
     return render_template(
         "tenders/detail.html",
         tender=tender,
+        tender_signal=evaluate_tender_health(tender, today=today),
         extraction_runs=extraction_runs,
         extraction_jobs=extraction_jobs,
         item_status_options=ITEM_STATUS_OPTIONS,
+        signal_legend=get_signal_legend(),
         chat_context=chat_context,
     )
 

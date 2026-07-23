@@ -131,6 +131,194 @@ body {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 251, 253, 0.9));
 }
 
+.tender-health-critical {
+  --signal-bg: rgba(177, 46, 46, 0.12);
+  --signal-border: rgba(177, 46, 46, 0.32);
+  --signal-accent: #8f1f1f;
+}
+
+.tender-health-warning {
+  --signal-bg: rgba(198, 132, 34, 0.14);
+  --signal-border: rgba(198, 132, 34, 0.32);
+  --signal-accent: #8a5a12;
+}
+
+.tender-health-watch {
+  --signal-bg: rgba(33, 102, 158, 0.12);
+  --signal-border: rgba(33, 102, 158, 0.28);
+  --signal-accent: #15527f;
+}
+
+.tender-health-healthy {
+  --signal-bg: rgba(44, 126, 78, 0.11);
+  --signal-border: rgba(44, 126, 78, 0.25);
+  --signal-accent: #1f6a42;
+}
+
+.tender-health-completed {
+  --signal-bg: rgba(19, 94, 67, 0.13);
+  --signal-border: rgba(19, 94, 67, 0.28);
+  --signal-accent: #135e43;
+}
+
+.tender-health-inactive {
+  --signal-bg: rgba(84, 99, 112, 0.11);
+  --signal-border: rgba(84, 99, 112, 0.24);
+  --signal-accent: #44515d;
+}
+
+.tender-health-row > td {
+  background: var(--signal-bg, transparent) !important;
+  border-color: var(--signal-border, rgba(17, 58, 82, 0.08));
+}
+
+.tender-hero {
+  border: 1px solid var(--signal-border, rgba(255, 255, 255, 0.12));
+  position: relative;
+  overflow: hidden;
+}
+
+.tender-hero::after {
+  content: "";
+  position: absolute;
+  inset: auto -10% -45% 40%;
+  height: 180px;
+  background: radial-gradient(circle, var(--signal-bg, rgba(255, 255, 255, 0.08)) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.tender-signal-summary {
+  border: 1px solid var(--signal-border, rgba(17, 58, 82, 0.08));
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(248, 251, 253, 0.86)),
+    linear-gradient(180deg, var(--signal-bg, transparent), transparent);
+}
+
+.tender-signal-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 0.45rem 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+}
+
+.tender-signal-badge-critical,
+.tender-signal-badge-warning,
+.tender-signal-badge-watch,
+.tender-signal-badge-healthy,
+.tender-signal-badge-completed,
+.tender-signal-badge-inactive {
+  background: var(--signal-bg, rgba(17, 58, 82, 0.08));
+  color: var(--signal-accent, var(--ink));
+  border-color: var(--signal-border, rgba(17, 58, 82, 0.12));
+}
+
+.tender-signal-badge-critical {
+  --signal-bg: rgba(177, 46, 46, 0.12);
+  --signal-border: rgba(177, 46, 46, 0.28);
+  --signal-accent: #8f1f1f;
+}
+
+.tender-signal-badge-warning {
+  --signal-bg: rgba(198, 132, 34, 0.13);
+  --signal-border: rgba(198, 132, 34, 0.26);
+  --signal-accent: #8a5a12;
+}
+
+.tender-signal-badge-watch {
+  --signal-bg: rgba(33, 102, 158, 0.11);
+  --signal-border: rgba(33, 102, 158, 0.22);
+  --signal-accent: #15527f;
+}
+
+.tender-signal-badge-healthy {
+  --signal-bg: rgba(44, 126, 78, 0.11);
+  --signal-border: rgba(44, 126, 78, 0.22);
+  --signal-accent: #1f6a42;
+}
+
+.tender-signal-badge-completed {
+  --signal-bg: rgba(19, 94, 67, 0.12);
+  --signal-border: rgba(19, 94, 67, 0.24);
+  --signal-accent: #135e43;
+}
+
+.tender-signal-badge-inactive {
+  --signal-bg: rgba(84, 99, 112, 0.11);
+  --signal-border: rgba(84, 99, 112, 0.2);
+  --signal-accent: #44515d;
+}
+
+.tender-signal-legend {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.75rem;
+}
+
+.tender-signal-legend-compact {
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  min-width: min(100%, 420px);
+}
+
+.tender-signal-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.8rem 0.95rem;
+  border-radius: 1rem;
+  background: var(--signal-bg, rgba(17, 58, 82, 0.06));
+  border: 1px solid var(--signal-border, rgba(17, 58, 82, 0.1));
+  color: var(--ink);
+}
+
+.tender-signal-chip strong {
+  color: var(--signal-accent, var(--ink));
+}
+
+.tender-signal-chip span {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.tender-signal-chip-critical {
+  --signal-bg: rgba(177, 46, 46, 0.1);
+  --signal-border: rgba(177, 46, 46, 0.24);
+  --signal-accent: #8f1f1f;
+}
+
+.tender-signal-chip-warning {
+  --signal-bg: rgba(198, 132, 34, 0.11);
+  --signal-border: rgba(198, 132, 34, 0.24);
+  --signal-accent: #8a5a12;
+}
+
+.tender-signal-chip-watch {
+  --signal-bg: rgba(33, 102, 158, 0.1);
+  --signal-border: rgba(33, 102, 158, 0.2);
+  --signal-accent: #15527f;
+}
+
+.tender-signal-chip-healthy {
+  --signal-bg: rgba(44, 126, 78, 0.09);
+  --signal-border: rgba(44, 126, 78, 0.2);
+  --signal-accent: #1f6a42;
+}
+
+.tender-signal-chip-completed {
+  --signal-bg: rgba(19, 94, 67, 0.1);
+  --signal-border: rgba(19, 94, 67, 0.22);
+  --signal-accent: #135e43;
+}
+
+.tender-signal-chip-inactive {
+  --signal-bg: rgba(84, 99, 112, 0.09);
+  --signal-border: rgba(84, 99, 112, 0.18);
+  --signal-accent: #44515d;
+}
+
 .chat-panel {
   position: sticky;
   top: 1rem;

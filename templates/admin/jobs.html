@@ -5,7 +5,7 @@
   <div>
     <span class="eyebrow">Operations</span>
     <h1 class="display-title">Background jobs</h1>
-    <p class="hero-copy mb-0">Inspect the extraction worker, pause or resume new processing, and cancel or retry individual jobs.</p>
+    <p class="hero-copy mb-0">Inspect the extraction worker, the tender monitor agent, and the automated warning pipeline from one place.</p>
   </div>
   <div class="hero-actions">
     <a class="btn btn-outline-dark btn-lg" href="{{ url_for('admin.index') }}">Back To Admin</a>
@@ -16,6 +16,18 @@
     {% else %}
     <form method="post" action="{{ url_for('admin.pause_jobs_worker') }}">
       <button class="btn btn-outline-danger btn-lg" type="submit">Pause Worker</button>
+    </form>
+    {% endif %}
+    <form method="post" action="{{ url_for('admin.run_monitor_worker') }}">
+      <button class="btn btn-outline-light btn-lg" type="submit">Run Tender Monitor Now</button>
+    </form>
+    {% if tender_monitor_status.paused %}
+    <form method="post" action="{{ url_for('admin.resume_monitor_worker') }}">
+      <button class="btn btn-primary btn-lg" type="submit">Start Monitor</button>
+    </form>
+    {% else %}
+    <form method="post" action="{{ url_for('admin.pause_monitor_worker') }}">
+      <button class="btn btn-outline-warning btn-lg" type="submit">Pause Monitor</button>
     </form>
     {% endif %}
   </div>
@@ -31,6 +43,7 @@
   <div class="col-md-6 col-xl-2"><div class="card metric-card h-100"><div class="card-body"><div class="stat-label">Completed</div><div class="stat-value">{{ stats.completed }}</div></div></div></div>
   <div class="col-md-6 col-xl-2"><div class="card metric-card h-100"><div class="card-body"><div class="stat-label">Failed</div><div class="stat-value">{{ stats.failed }}</div></div></div></div>
   <div class="col-md-6 col-xl-2"><div class="card metric-card h-100"><div class="card-body"><div class="stat-label">Cancelled</div><div class="stat-value">{{ stats.cancelled }}</div></div></div></div>
+  <div class="col-md-6 col-xl-2"><div class="card metric-card h-100"><div class="card-body"><div class="stat-label">Monitor Alerts</div><div class="stat-value">{{ stats.monitor_alerts }}</div></div></div></div>
 </div>
 
 <div class="card glass-panel mb-4">
@@ -51,6 +64,24 @@
       </div>
     </div>
     <a class="btn btn-outline-primary btn-sm" href="{{ url_for('admin.list_records', model_slug='extraction-jobs') }}">Open Raw Job Table</a>
+  </div>
+</div>
+
+<div class="card glass-panel mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span>Tender monitor</span>
+    <a class="btn btn-outline-primary btn-sm" href="{{ url_for('admin.list_records', model_slug='tender-monitor-alerts') }}">Open Alert Log</a>
+  </div>
+  <div class="card-body">
+    <div class="row g-3 mb-3">
+      <div class="col-md-6 col-xl-2"><div class="card metric-card h-100"><div class="card-body"><div class="stat-label">Monitor</div><div class="stat-value">{{ "Alive" if tender_monitor_status.alive else "Down" }}</div></div></div></div>
+      <div class="col-md-6 col-xl-2"><div class="card metric-card h-100"><div class="card-body"><div class="stat-label">Mode</div><div class="stat-value">{{ "Paused" if tender_monitor_status.paused else "Running" }}</div></div></div></div>
+      <div class="col-md-6 col-xl-2"><div class="card metric-card h-100"><div class="card-body"><div class="stat-label">Enabled</div><div class="stat-value">{{ "Yes" if tender_monitor_status.enabled else "No" }}</div></div></div></div>
+      <div class="col-md-6 col-xl-2"><div class="card metric-card h-100"><div class="card-body"><div class="stat-label">Scanning</div><div class="stat-value">{{ "Yes" if tender_monitor_status.active else "No" }}</div></div></div></div>
+      <div class="col-md-6 col-xl-2"><div class="card metric-card h-100"><div class="card-body"><div class="stat-label">Last Start</div><div class="stat-value">{{ tender_monitor_status.last_scan_started_at.strftime('%Y-%m-%d %H:%M:%S') if tender_monitor_status.last_scan_started_at else "-" }}</div></div></div></div>
+      <div class="col-md-6 col-xl-2"><div class="card metric-card h-100"><div class="card-body"><div class="stat-label">Last End</div><div class="stat-value">{{ tender_monitor_status.last_scan_completed_at.strftime('%Y-%m-%d %H:%M:%S') if tender_monitor_status.last_scan_completed_at else "-" }}</div></div></div></div>
+    </div>
+    <div class="small text-muted">{{ tender_monitor_status.last_scan_summary }}</div>
   </div>
 </div>
 
@@ -108,6 +139,47 @@
         </tr>
         {% else %}
         <tr><td colspan="7" class="text-muted">No extraction jobs recorded yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card glass-panel mt-4">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span>Recent tender warnings</span>
+    <span class="text-muted small">Newest 20 monitor alerts</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Tender</th>
+          <th>Severity</th>
+          <th>Signal</th>
+          <th>Recipients</th>
+          <th>Status</th>
+          <th>Sent</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for alert in recent_alerts %}
+        <tr class="tender-health-row tender-health-{{ alert.severity }}">
+          <td>
+            {% if alert.tender %}
+            <a class="link-dark text-decoration-none fw-semibold" href="{{ url_for('tenders.detail_tender', tender_id=alert.tender_id) }}">{{ alert.tender.tender_number }}</a>
+            {% else %}
+            Missing tender
+            {% endif %}
+          </td>
+          <td><span class="badge tender-signal-badge tender-signal-badge-{{ alert.severity }}">{{ alert.severity.title() }}</span></td>
+          <td>{{ alert.signal_label }}</td>
+          <td>{{ alert.recipient_emails or "-" }}</td>
+          <td>{{ alert.status }}</td>
+          <td>{{ alert.sent_at.strftime('%Y-%m-%d %H:%M:%S') if alert.sent_at else '-' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="text-muted">No tender warning emails have been recorded yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>

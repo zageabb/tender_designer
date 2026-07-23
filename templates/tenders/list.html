@@ -12,6 +12,16 @@
 
 <div class="card glass-panel">
   <div class="card-body border-bottom">
+    <div class="tender-signal-legend">
+      {% for legend in signal_legend %}
+      <div class="tender-signal-chip tender-signal-chip-{{ legend.key }}">
+        <strong>{{ legend.label }}</strong>
+        <span>{{ legend.description }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="card-body border-bottom">
     <div class="row g-3" data-tenders-filters>
       <div class="col-md-4">
         <label class="form-label">Search</label>
@@ -54,7 +64,9 @@
       </thead>
       <tbody data-tenders-table-body>
         {% for tender in tenders %}
+        {% set signal = tender_health[tender.id] %}
         <tr
+          class="tender-health-row tender-health-{{ signal.css_modifier }}"
           data-id="{{ tender.id }}"
           data-customer-name="{{ tender.customer_name }}"
           data-tender-number="{{ tender.tender_number }}"
@@ -70,7 +82,10 @@
           <td>{{ tender.title or "-" }}</td>
           <td>{{ tender.submission_date.strftime('%Y-%m-%d') if tender.submission_date else "-" }}</td>
           <td>{{ tender.award_date.strftime('%Y-%m-%d') if tender.award_date else "-" }}</td>
-          <td>{{ tender.status }}</td>
+          <td>
+            <div>{{ tender.status }}</div>
+            <div class="small text-muted">{{ signal.label }}</div>
+          </td>
           <td>{{ tender.currency }} {{ tender.tender_value or 0 }}</td>
           <td class="text-end">
             <a class="btn btn-sm btn-outline-primary" href="{{ url_for('tenders.detail_tender', tender_id=tender.id) }}">View</a>
@@ -101,8 +116,9 @@
     const resetButton = document.querySelector("[data-tenders-reset]");
     const sortButtons = Array.from(document.querySelectorAll("[data-tenders-sort]"));
     const rows = Array.from(body.querySelectorAll("tr[data-id]"));
-    const today = new Date("2026-07-23T00:00:00");
-    const nextThirty = new Date("2026-08-22T23:59:59");
+    const today = new Date("{{ today_iso }}T00:00:00");
+    const nextThirty = new Date(today.getTime());
+    nextThirty.setDate(nextThirty.getDate() + 30);
     let sortKey = "submissionDate";
     let sortDirection = "asc";
 

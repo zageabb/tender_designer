@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 
 from database import db
 from models import AppSetting
+from services.markdown_tools import render_markdown_html
 from services.ollama_client import OllamaClient
 from services.prompt_service import PROMPT_FILES, ensure_prompt_files, get_prompt_content, save_prompt_content
 from services.settings_service import DEFAULT_SETTINGS, ensure_default_settings
@@ -24,6 +27,8 @@ def index():
         }
         for prompt_key, payload in PROMPT_FILES.items()
     }
+    signal_matrix_path = Path(__file__).resolve().parent.parent / "TENDER_SIGNAL_MATRIX.md"
+    signal_matrix_markdown = signal_matrix_path.read_text(encoding="utf-8") if signal_matrix_path.exists() else ""
     if request.method == "POST":
         for key in DEFAULT_SETTINGS:
             record = settings.get(key)
@@ -42,6 +47,7 @@ def index():
         settings=settings,
         defaults=DEFAULT_SETTINGS,
         prompt_files=prompt_files,
+        signal_matrix_html=render_markdown_html(signal_matrix_markdown) if signal_matrix_markdown else "",
         chat_context={"page": "settings"},
     )
 
