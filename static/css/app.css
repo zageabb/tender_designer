@@ -468,6 +468,28 @@ body {
   background: white;
 }
 
+.markdown-rendered .markdown-table-wrap {
+  margin-bottom: 1rem;
+  border: 1px solid rgba(17, 58, 82, 0.12);
+  border-radius: 0.75rem;
+}
+
+.markdown-rendered .markdown-table-wrap .markdown-table {
+  min-width: 680px;
+  margin-bottom: 0;
+}
+
+.markdown-rendered .markdown-table th {
+  background: rgba(17, 58, 82, 0.06);
+  color: var(--ink-dark);
+}
+
+.markdown-rendered .markdown-table th,
+.markdown-rendered .markdown-table td {
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
 .chat-message.user {
   background: #d9ecff;
 }
