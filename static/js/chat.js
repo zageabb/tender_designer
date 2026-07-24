@@ -86,6 +86,7 @@ function renderMarkdown(text) {
   let listItems = [];
   let inCodeBlock = false;
   let codeLines = [];
+  let tableLines = [];
 
   function flushParagraph() {
     if (!paragraph.length) return;
@@ -107,10 +108,45 @@ function renderMarkdown(text) {
     codeLines = [];
   }
 
+  function isMarkdownTableLine(value) {
+    return /^\|.+\|$/.test(value.trim());
+  }
+
+  function isMarkdownTableSeparator(value) {
+    const cells = value.trim().replace(/^\||\|$/g, "").split("|");
+    return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
+  }
+
+  function splitMarkdownTableRow(value) {
+    return value.trim().replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim());
+  }
+
+  function flushTable() {
+    if (!tableLines.length) return;
+    if (tableLines.length < 2 || !isMarkdownTableSeparator(tableLines[1])) {
+      html.push(`<p>${tableLines.map((line) => formatInlineMarkdown(line)).join("<br>")}</p>`);
+      tableLines = [];
+      return;
+    }
+
+    const rows = tableLines.map(splitMarkdownTableRow);
+    const header = rows[0];
+    const bodyRows = rows.slice(2);
+    const headerHtml = header.map((cell) => `<th>${formatInlineMarkdown(cell)}</th>`).join("");
+    const bodyHtml = bodyRows
+      .map((row) => `<tr>${row.map((cell) => `<td>${formatInlineMarkdown(cell)}</td>`).join("")}</tr>`)
+      .join("");
+    html.push(
+      `<div class="table-responsive markdown-table-wrap"><table class="table table-sm table-bordered markdown-table"><thead><tr>${headerHtml}</tr></thead><tbody>${bodyHtml}</tbody></table></div>`
+    );
+    tableLines = [];
+  }
+
   for (const line of lines) {
     if (line.trim().startsWith("```")) {
       flushParagraph();
       flushList();
+      flushTable();
       if (inCodeBlock) {
         flushCodeBlock();
       } else {
@@ -124,12 +160,32 @@ function renderMarkdown(text) {
       continue;
     }
 
+    if (isMarkdownTableLine(line)) {
+      flushParagraph();
+      flushList();
+      tableLines.push(line);
+      continue;
+    }
+
+    if (tableLines.length) {
+      flushTable();
+    }
+
     const unorderedMatch = line.match(/^\s*[-*]\s+(.*)$/);
     const orderedMatch = line.match(/^\s*\d+\.\s+(.*)$/);
+    const headingMatch = line.trim().match(/^(#{1,6})\s+(.*)$/);
 
     if (!line.trim()) {
       flushParagraph();
       flushList();
+      continue;
+    }
+
+    if (headingMatch) {
+      flushParagraph();
+      flushList();
+      const level = headingMatch[1].length;
+      html.push(`<h${level}>${formatInlineMarkdown(headingMatch[2])}</h${level}>`);
       continue;
     }
 
@@ -153,8 +209,9 @@ function renderMarkdown(text) {
     paragraph.push(line);
   }
 
-  flushParagraph();
   flushList();
+  flushTable();
+  flushParagraph();
   flushCodeBlock();
 
   return html.join("");
