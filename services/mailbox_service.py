@@ -251,6 +251,14 @@ def _iter_attachment_parts(message: email.message.EmailMessage):
             yield part
 
 
+def _resolved_read_state(existing_value: bool, flags: set[str] | None) -> bool:
+    if flags is None:
+        return existing_value
+    if not flags:
+        return existing_value
+    return "seen" in flags
+
+
 def _sync_message_record(data_dir: Path, uid: str, raw_bytes: bytes, folder: str, flags: set[str] | None = None) -> MailboxMessage:
     parsed = BytesParser(policy=policy.default).parsebytes(raw_bytes)
     identifier = _message_identifier(parsed, uid)
@@ -274,7 +282,7 @@ def _sync_message_record(data_dir: Path, uid: str, raw_bytes: bytes, folder: str
     mailbox_message.received_at = parsed.get("date").datetime if parsed.get("date") and parsed.get("date").datetime else mailbox_message.received_at
     mailbox_message.body_text = _message_body(parsed)
     mailbox_message.snippet = (mailbox_message.body_text or "")[:240] or mailbox_message.subject
-    mailbox_message.is_read = "seen" in (flags or set())
+    mailbox_message.is_read = _resolved_read_state(mailbox_message.is_read, flags)
     _save_message_payload(data_dir, mailbox_message, raw_bytes)
     for part in _iter_attachment_parts(parsed):
         _save_attachment(data_dir, mailbox_message, part)
