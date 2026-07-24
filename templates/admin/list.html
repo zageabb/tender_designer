@@ -50,11 +50,26 @@
       </thead>
       <tbody data-admin-table-body>
         {% for record in records %}
+        {% set link_fields = ['title', 'subject', 'original_filename', 'filename', 'description', 'tender_number', 'customer_name', 'question_text', 'key', 'supplier_name', 'sender_email', 'recipient_email', 'provider_message_id', 'id'] %}
+        {% set link_state = namespace(done=false) %}
         <tr data-admin-row>
           {% for column in inspector.columns %}
           {% set value = record|attr(column.name) %}
           <td data-admin-value="{{ (value|string) if value is not none else '' }}">
-            {% if value is string %}
+            {% if not link_state.done and column.name in link_fields and value is not none %}
+              <a class="link-dark text-decoration-none fw-semibold" href="{{ url_for('admin.view_record', model_slug=model_slug, record_id=record.id) }}">
+                {% if value is string %}
+                  {% if value|length > 160 %}
+                    <div class="markdown-rendered text-preview admin-cell-preview markdown-preview" title="{{ value }}">{{ render_markdown_html(value[:160] ~ '...') }}</div>
+                  {% else %}
+                    <div class="markdown-rendered text-preview admin-cell-preview markdown-preview" title="{{ value }}">{{ render_markdown_html(value) }}</div>
+                  {% endif %}
+                {% else %}
+                  {{ value }}
+                {% endif %}
+              </a>
+              {% set link_state.done = true %}
+            {% elif value is string %}
               {% if value|length > 160 %}
                 <div class="markdown-rendered text-preview admin-cell-preview markdown-preview" title="{{ value }}">{{ render_markdown_html(value[:160] ~ '...') }}</div>
               {% else %}
@@ -67,7 +82,6 @@
           {% endfor %}
           <td class="text-end">
             <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.edit_record', model_slug=model_slug, record_id=record.id) }}">Edit</a>
-            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.view_record', model_slug=model_slug, record_id=record.id) }}">View</a>
           </td>
         </tr>
         {% else %}

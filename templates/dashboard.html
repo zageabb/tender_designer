@@ -87,7 +87,7 @@
           data-submission-date="{{ tender.submission_date.isoformat() if tender.submission_date else '' }}"
           data-tender-value="{{ tender.tender_value or 0 }}"
         >
-          <td>{{ tender.tender_number }}</td>
+          <td><a class="link-dark text-decoration-none fw-semibold" href="{{ url_for('tenders.detail_tender', tender_id=tender.id) }}">{{ tender.tender_number }}</a></td>
           <td>{{ tender.customer_name }}</td>
           <td>
             <div>{{ tender.status }}</div>
@@ -95,7 +95,7 @@
           </td>
           <td>{{ tender.submission_date.isoformat() if tender.submission_date else '-' }}</td>
           <td>{{ tender.currency }} {{ tender.tender_value or 0 }}</td>
-          <td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('tenders.detail_tender', tender_id=tender.id) }}">View</a></td>
+          <td class="text-muted small">Open from tender number</td>
         </tr>
         {% else %}
         <tr><td colspan="6" class="text-muted">No outstanding tenders right now.</td></tr>

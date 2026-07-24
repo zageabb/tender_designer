@@ -83,11 +83,10 @@
         <tr>
           <td><strong>{{ tender.tender_number }}</strong></td>
           <td>{{ rfq.supplier_name or "Not set" }}</td>
-          <td>{{ rfq.subject }}</td>
+          <td><a class="link-dark text-decoration-none fw-semibold" href="{{ url_for('rfqs.view_rfq', rfq_id=rfq.id) }}">{{ rfq.subject }}</a></td>
           <td><span class="badge text-bg-light">{{ rfq.status }}</span></td>
           <td>
             <div class="d-flex gap-2 flex-wrap">
-              <a class="btn btn-sm btn-outline-primary" href="{{ url_for('rfqs.view_rfq', rfq_id=rfq.id) }}">Open RFI</a>
               <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('rfqs.edit_rfq', rfq_id=rfq.id) }}">Edit</a>
               <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('rfqs.download_rfq', rfq_id=rfq.id) }}">Download .eml</a>
               <form method="post" action="{{ url_for('rfqs.send_rfq_direct', rfq_id=rfq.id) }}">
@@ -120,11 +119,10 @@
         <tr>
           <td><strong>{{ tender.tender_number }}</strong></td>
           <td>{{ tender_email.recipient_email or "Not set" }}</td>
-          <td>{{ tender_email.subject }}</td>
+          <td><a class="link-dark text-decoration-none fw-semibold" href="{{ url_for('tender_emails.view_tender_email', tender_email_id=tender_email.id) }}">{{ tender_email.subject }}</a></td>
           <td><span class="badge text-bg-light">{{ tender_email.status }}</span></td>
           <td>
             <div class="d-flex gap-2 flex-wrap">
-              <a class="btn btn-sm btn-outline-primary" href="{{ url_for('tender_emails.view_tender_email', tender_email_id=tender_email.id) }}">Open</a>
               <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('tender_emails.edit_tender_email', tender_email_id=tender_email.id) }}">Edit</a>
               <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('tender_emails.download_tender_email', tender_email_id=tender_email.id) }}">Download .eml</a>
               <form method="post" action="{{ url_for('tender_emails.send_tender_email', tender_email_id=tender_email.id) }}">
@@ -206,7 +204,7 @@
             {% for document in tender.documents %}
             <tr>
               <td><input class="form-check-input extraction-document-checkbox" type="checkbox" value="{{ document.id }}"></td>
-              <td>{{ document.original_filename }}</td>
+              <td><a class="link-dark text-decoration-none fw-semibold" href="{{ url_for('tenders.view_document_text', document_id=document.id) }}">{{ document.original_filename }}</a></td>
               <td>{{ document.file_type }}</td>
               <td>{{ "Processed" if document.processed else "Pending" }}</td>
               <td><div class="markdown-rendered text-preview markdown-preview">{{ render_markdown_html((document.extracted_text or document.processing_notes or "-")[:160]) }}</div></td>
@@ -216,7 +214,6 @@
                     <button class="btn btn-sm btn-outline-primary" type="submit">Process Document</button>
                   </form>
                   <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('tenders.download_document', document_id=document.id) }}">Download</a>
-                  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('tenders.view_document_text', document_id=document.id) }}">View Extracted Text</a>
                   <form method="post" action="{{ url_for('tenders.delete_document', document_id=document.id) }}" onsubmit="return confirm('Delete document {{ document.original_filename }}?');">
                     <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
                   </form>

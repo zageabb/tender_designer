@@ -106,7 +106,7 @@
       <tbody>
         {% for job in jobs %}
         <tr>
-          <td>#{{ job.id }}</td>
+          <td><a class="link-dark text-decoration-none fw-semibold" href="{{ url_for('admin.view_record', model_slug='extraction-jobs', record_id=job.id) }}">#{{ job.id }}</a></td>
           <td>
             <div>{{ job.tender.tender_number if job.tender else "Missing tender" }}</div>
             {% if job.tender %}
@@ -123,7 +123,6 @@
           <td>{{ job.updated_at.strftime('%Y-%m-%d %H:%M:%S') if job.updated_at else "-" }}</td>
           <td class="text-end">
             <div class="d-flex gap-2 justify-content-end flex-wrap">
-              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.view_record', model_slug='extraction-jobs', record_id=job.id) }}">View</a>
               {% if job.status in ['queued', 'running', 'cancelling'] %}
               <form method="post" action="{{ url_for('admin.cancel_job', job_id=job.id) }}" onsubmit="return confirm('Cancel job #{{ job.id }}? A running LLM call may need to finish first.');">
                 <button class="btn btn-sm btn-outline-danger" type="submit">Cancel</button>

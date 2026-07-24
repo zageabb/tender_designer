@@ -78,8 +78,14 @@
         >
           <td>{{ tender.id }}</td>
           <td>{{ tender.customer_name }}</td>
-          <td>{{ tender.tender_number }}</td>
-          <td>{{ tender.title or "-" }}</td>
+          <td><a class="link-dark text-decoration-none fw-semibold" href="{{ url_for('tenders.detail_tender', tender_id=tender.id) }}">{{ tender.tender_number }}</a></td>
+          <td>
+            {% if tender.title %}
+            <a class="link-dark text-decoration-none" href="{{ url_for('tenders.detail_tender', tender_id=tender.id) }}">{{ tender.title }}</a>
+            {% else %}
+            <span class="text-muted">-</span>
+            {% endif %}
+          </td>
           <td>{{ tender.submission_date.strftime('%Y-%m-%d') if tender.submission_date else "-" }}</td>
           <td>{{ tender.award_date.strftime('%Y-%m-%d') if tender.award_date else "-" }}</td>
           <td>
@@ -88,7 +94,6 @@
           </td>
           <td>{{ tender.currency }} {{ tender.tender_value or 0 }}</td>
           <td class="text-end">
-            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('tenders.detail_tender', tender_id=tender.id) }}">View</a>
             <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('tenders.edit_tender', tender_id=tender.id) }}">Edit</a>
             <form method="post" action="{{ url_for('tenders.delete_tender', tender_id=tender.id) }}" class="d-inline" onsubmit="return confirm('Delete tender {{ tender.tender_number }}? This cannot be undone.');">
               <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
