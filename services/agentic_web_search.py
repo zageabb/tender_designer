@@ -7,8 +7,6 @@ from dataclasses import dataclass
 from urllib.parse import urlparse
 
 import requests
-import trafilatura
-from ddgs import DDGS
 
 from services.ollama_client import OllamaClient
 
@@ -45,6 +43,12 @@ class DDGSSearchProvider:
         self.timeout = timeout
 
     def search(self, query: str, max_results: int = 8) -> list[SearchResult]:
+        try:
+            from ddgs import DDGS
+        except ImportError as exc:
+            raise RuntimeError(
+                "The Computer Finder search library is unavailable. Install the project requirements."
+            ) from exc
         rows = DDGS(timeout=self.timeout).text(
             query,
             region=self.region,
@@ -88,14 +92,7 @@ class WebPageReader:
         content_type = response.headers.get("content-type", "").lower()
         if "html" not in content_type:
             return self._snippet_evidence(result, source_id)
-        extracted = trafilatura.extract(
-            response.text,
-            url=response.url,
-            output_format="markdown",
-            include_comments=False,
-            include_tables=True,
-            favor_recall=True,
-        )
+        extracted = _extract_page_text(response.text, response.url)
         text = " ".join((extracted or "").split())
         if len(text) < 80:
             return self._snippet_evidence(result, source_id)
@@ -360,3 +357,30 @@ def _safe_public_url(url: str) -> bool:
         if not ip.is_global:
             return False
     return True
+
+
+def _extract_page_text(html_text: str, url: str) -> str:
+    try:
+        import trafilatura
+
+        return trafilatura.extract(
+            html_text,
+            url=url,
+            output_format="markdown",
+            include_comments=False,
+            include_tables=True,
+            favor_recall=True,
+        ) or ""
+    except ImportError:
+        # Keep the application and Computer Finder operational if an optional
+        # extraction dependency is missing in an existing deployment.
+        import html
+        import re
+
+        text = re.sub(r"(?is)<(script|style|noscript|svg|iframe).*?</\1>", " ", html_text)
+        text = re.sub(r"(?is)</(p|div|li|tr|h[1-6])>", "\n", text)
+        text = re.sub(r"(?s)<[^>]+>", " ", text)
+        return "\n".join(
+            line for line in (" ".join(html.unescape(item).split()) for item in text.splitlines())
+            if len(line) > 30
+        )
