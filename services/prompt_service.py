@@ -81,15 +81,33 @@ PROMPT_FILES = {
             "# Chat Action Orchestrator Prompt\n\n"
             "Classify the user's message into one of these intents and return JSON only with keys "
             "`intent`, `confidence`, and `reason`.\n"
-            "Allowed intents: create_tender_from_upload, create_tender_from_text, add_items_from_message, answer_questions_from_documents, confirm_action, none.\n"
+            "Allowed intents: create_tender_from_upload, create_tender_from_text, add_items_from_message, answer_questions_from_documents, update_tender_fields, confirm_action, none.\n"
             "Use `create_tender_from_upload` only if the user appears to want a new tender created from an uploaded document.\n"
             "Use `create_tender_from_text` only if the user appears to want a new tender created from pasted text in the chat itself.\n"
             "Use `add_items_from_message` only if the user is asking to turn a typed list of items into tender items on the current tender.\n"
             "Use `answer_questions_from_documents` only if the user is asking to fill tender question answers from the uploaded or selected supporting document text.\n"
+            "Use `update_tender_fields` only if the user is asking to change one or more fields on the current tender.\n"
             "Use `confirm_action` only if the user is clearly confirming a previously proposed action.\n\n"
             "User message: {{user_message}}\n"
             "Has upload available: {{has_upload}}\n"
             "Has tender context: {{has_tender_context}}\n"
+        ),
+    },
+    "tender_field_update": {
+        "filename": "tender_field_update.md",
+        "title": "Tender Field Update",
+        "description": "Instruction file used to convert a chat request into confirmed Tender field updates.",
+        "default_content": (
+            "# Tender Field Update Prompt\n\n"
+            "Convert the user's request into updates for the current Tender record.\n"
+            "Return JSON only in this form: {\"updates\": {\"field_name\": \"new value\"}}.\n"
+            "Only use fields from this allowed list: {{tender_fields}}.\n"
+            "Dates must use YYYY-MM-DD. tender_value must be numeric.\n"
+            "submission_type must be one of: Email, Portal, Postal, Hand delivered.\n"
+            "Use null only when the user explicitly asks to clear an optional field.\n"
+            "Do not infer changes the user did not request. Do not include IDs or timestamps.\n\n"
+            "Current Tender fields:\n{{tender_context}}\n\n"
+            "User request:\n{{user_message}}\n"
         ),
     },
     "chat_general_answer": {
