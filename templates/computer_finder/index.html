@@ -97,6 +97,31 @@
     <div id="computer-finder-status" class="alert alert-secondary mb-3">Ready for a spec.</div>
     <div id="computer-finder-result" class="markdown-rendered computer-finder-result"></div>
     <div id="computer-finder-sources" class="computer-finder-sources"></div>
+    <div
+      id="computer-finder-save-actions"
+      class="border-top mt-4 pt-3 d-none"
+      data-export-url="{{ url_for('computer_finder.export_result') }}"
+      data-attach-url="{{ url_for('computer_finder.attach_result_to_tender') }}"
+    >
+      <div class="row g-2 align-items-end">
+        <div class="col-md-3">
+          <button class="btn btn-outline-primary w-100" id="computer-finder-download" type="button">Download .md</button>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-semibold" for="computer-finder-tender">Attach result to tender</label>
+          <select class="form-select" id="computer-finder-tender">
+            <option value="">Choose a tender</option>
+            {% for tender in tenders %}
+            <option value="{{ tender.id }}">{{ tender.tender_number }}{% if tender.title %} — {{ tender.title }}{% endif %}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3">
+          <button class="btn btn-primary w-100" id="computer-finder-attach" type="button">Save To Tender</button>
+        </div>
+      </div>
+      <div class="small mt-2" id="computer-finder-save-status"></div>
+    </div>
     <div id="computer-finder-steps" class="chat-steps mt-3 d-none"></div>
   </div>
 </section>
