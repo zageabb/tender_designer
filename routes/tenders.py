@@ -18,6 +18,7 @@ from services.extraction_jobs import TASK_CONFIG, enqueue_extraction_job, ensure
 from services.file_storage import ensure_tender_directories, save_tender_bytes, save_tender_upload
 from services.chat_service import add_chat_message, get_or_create_session
 from services.markdown_tools import extracted_text_suffix, looks_like_markdown, render_markdown_html
+from services.managed_paths import ManagedPathError, resolve_managed_path, unlink_managed_file
 from services.settings_service import get_task_model
 from services.tender_health import evaluate_tender_health, get_signal_legend
 from services.upload_ingestion import expand_upload_entries
@@ -433,11 +434,7 @@ def upload_document(tender_id: int):
                 stored_name=stored_name_hint,
             )
             if existing_document is not None:
-                if existing_document.extracted_text_path and os.path.exists(existing_document.extracted_text_path):
-                    try:
-                        os.remove(existing_document.extracted_text_path)
-                    except OSError:
-                        pass
+                unlink_managed_file(current_app.config["DATA_DIR"], existing_document.extracted_text_path)
                 existing_document.stored_filename = stored_name
                 existing_document.file_path = str(saved_path)
                 existing_document.file_type = entry.extension.lstrip(".")
@@ -465,16 +462,18 @@ def upload_document(tender_id: int):
 @tenders_bp.route("/documents/<int:document_id>/process", methods=["POST"])
 def process_document(document_id: int):
     document = TenderDocument.query.get_or_404(document_id)
-    text, error = extract_text(document.file_path)
+    try:
+        source_path = resolve_managed_path(current_app.config["DATA_DIR"], document.file_path, must_exist=True)
+    except ManagedPathError as exc:
+        flash(str(exc), "danger")
+        return _detail_redirect(document.tender_id, anchor="documents")
+    text, error = extract_text(source_path)
     extracted_dir = current_app.config["DATA_DIR"] / "tenders" / str(document.tender_id) / "extracted_text"
     extracted_dir.mkdir(parents=True, exist_ok=True)
     if text:
         text_path = extracted_dir / f"{document.stored_filename}{extracted_text_suffix(text)}"
-        if document.extracted_text_path and document.extracted_text_path != str(text_path) and os.path.exists(document.extracted_text_path):
-            try:
-                os.remove(document.extracted_text_path)
-            except OSError:
-                pass
+        if document.extracted_text_path and document.extracted_text_path != str(text_path):
+            unlink_managed_file(current_app.config["DATA_DIR"], document.extracted_text_path)
         text_path.write_text(text, encoding="utf-8")
         document.extracted_text = text
         document.extracted_text_path = str(text_path)
@@ -494,12 +493,12 @@ def delete_document(document_id: int):
     document = TenderDocument.query.get_or_404(document_id)
     tender_id = document.tender_id
     filename = document.original_filename
-    for path_value in (document.file_path, document.extracted_text_path):
-        if path_value and os.path.exists(path_value):
-            try:
-                os.remove(path_value)
-            except OSError:
-                pass
+    try:
+        for path_value in (document.file_path, document.extracted_text_path):
+            unlink_managed_file(current_app.config["DATA_DIR"], path_value)
+    except ManagedPathError as exc:
+        flash(str(exc), "danger")
+        return _detail_redirect(tender_id, anchor="documents")
     db.session.delete(document)
     db.session.commit()
     flash(f"Deleted document: {filename}.", "success")
@@ -526,8 +525,9 @@ def view_document_text(document_id: int):
 @tenders_bp.route("/documents/<int:document_id>/download")
 def download_document(document_id: int):
     document = TenderDocument.query.get_or_404(document_id)
-    path = Path(document.file_path or "")
-    if not path.exists():
+    try:
+        path = resolve_managed_path(current_app.config["DATA_DIR"], document.file_path or "", must_exist=True)
+    except ManagedPathError:
         flash("The uploaded document file is missing.", "danger")
         return _detail_redirect(document.tender_id, anchor="documents")
     return send_file(path, as_attachment=True, download_name=document.original_filename)

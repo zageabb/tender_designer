@@ -25,8 +25,6 @@ function buildChatContext() {
     const steps = document.getElementById("computer-finder-steps")?.textContent?.trim();
     const allowedDomains = document.getElementById("computer-finder-allowed-domains")?.value?.trim();
     const blockedDomains = document.getElementById("computer-finder-blocked-domains")?.value?.trim();
-    const searxngUrl = document.getElementById("computer-finder-searxng-url")?.value?.trim();
-    const searxngEngines = document.getElementById("computer-finder-searxng-engines")?.value?.trim();
     if (spec) context.computer_spec = spec.slice(0, 4000);
     if (status) context.computer_finder_status = status.slice(0, 1000);
     if (result) context.computer_finder_result = result.slice(0, 6000);
@@ -34,8 +32,6 @@ function buildChatContext() {
     if (steps) context.computer_finder_diagnostics = steps.slice(0, 5000);
     if (allowedDomains) context.computer_finder_allowed_domains = allowedDomains.slice(0, 2000);
     if (blockedDomains) context.computer_finder_blocked_domains = blockedDomains.slice(0, 1000);
-    if (searxngUrl) context.computer_finder_searxng_url = searxngUrl.slice(0, 500);
-    if (searxngEngines) context.computer_finder_searxng_engines = searxngEngines.slice(0, 500);
   }
   return context;
 }

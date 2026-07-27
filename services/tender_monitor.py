@@ -10,6 +10,7 @@ from models import Tender, TenderMonitorAlert
 from services.mailbox_service import send_composed_message
 from services.settings_service import get_setting, parse_email_recipients
 from services.tender_health import ACTIVE_STATUSES, evaluate_tender_health
+from services.worker_lease import acquire_worker_lease
 
 
 _monitor_lock = threading.Lock()
@@ -177,6 +178,8 @@ def start_tender_monitor_worker(app: Flask) -> None:
     global _monitor_started, _monitor_thread
     with _monitor_lock:
         if _monitor_thread and _monitor_thread.is_alive():
+            return
+        if not acquire_worker_lease(app, "tender-monitor-worker"):
             return
         worker = threading.Thread(target=_worker_loop, args=(app,), name="tender-monitor-worker", daemon=True)
         worker.start()

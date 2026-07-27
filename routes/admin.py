@@ -5,6 +5,7 @@ from decimal import Decimal, InvalidOperation
 import json
 
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
+from flask_login import current_user
 from sqlalchemy import inspect
 
 from database import db
@@ -55,6 +56,12 @@ from services.tender_monitor import (
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
+
+@admin_bp.before_request
+def require_admin_role():
+    if not getattr(current_user, "is_admin", False):
+        abort(403)
+
 ADMIN_MODELS = {
     "tenders": Tender,
     "tender-documents": TenderDocument,
@@ -70,7 +77,6 @@ ADMIN_MODELS = {
     "rag-documents": RAGDocument,
     "rag-chunks": RAGChunk,
     "llm-run-logs": LLMRunLog,
-    "settings": AppSetting,
     "chat-sessions": ChatSession,
     "chat-messages": ChatMessage,
     "chat-actions": ChatAction,
@@ -133,7 +139,10 @@ def _model_meta(slug: str) -> dict:
 def _is_editable(column) -> bool:
     if column.primary_key:
         return False
-    if column.name in {"created_at", "updated_at"}:
+    if column.name in {
+        "created_at", "updated_at", "file_path", "raw_eml_path", "eml_file_path",
+        "extracted_text_path", "stored_filename",
+    }:
         return False
     return True
 

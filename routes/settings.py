@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
+from flask_login import current_user
 
 from database import db
 from models import AppSetting
@@ -12,7 +13,16 @@ from services.prompt_service import PROMPT_FILES, ensure_prompt_files, get_promp
 from services.settings_service import DEFAULT_SETTINGS, ensure_default_settings
 
 
+SECRET_SETTING_KEYS = {"mail_app_password"}
+
+
 settings_bp = Blueprint("settings", __name__, url_prefix="/settings")
+
+
+@settings_bp.before_request
+def require_admin_role():
+    if not getattr(current_user, "is_admin", False):
+        abort(403)
 
 
 @settings_bp.route("/", methods=["GET", "POST"])
@@ -31,6 +41,8 @@ def index():
     signal_matrix_markdown = signal_matrix_path.read_text(encoding="utf-8") if signal_matrix_path.exists() else ""
     if request.method == "POST":
         for key in DEFAULT_SETTINGS:
+            if key in SECRET_SETTING_KEYS:
+                continue
             record = settings.get(key)
             if record is None:
                 continue
@@ -46,6 +58,7 @@ def index():
         "settings/index.html",
         settings=settings,
         defaults=DEFAULT_SETTINGS,
+        secret_setting_keys=SECRET_SETTING_KEYS,
         prompt_files=prompt_files,
         signal_matrix_html=render_markdown_html(signal_matrix_markdown) if signal_matrix_markdown else "",
         chat_context={"page": "settings"},

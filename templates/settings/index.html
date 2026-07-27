@@ -18,7 +18,9 @@
     {% set setting = settings.get(key) %}
     <div class="col-12">
       <label class="form-label fw-semibold">{{ key.replace("_", " ").title() }}</label>
-      {% if (setting.value if setting else default.value)|length > 120 or '\n' in (setting.value if setting else default.value) %}
+      {% if key in secret_setting_keys %}
+      <input class="form-control form-control-lg" type="password" value="Configured through the server environment" disabled>
+      {% elif (setting.value if setting else default.value)|length > 120 or '\n' in (setting.value if setting else default.value) %}
       <textarea class="form-control form-control-lg" name="{{ key }}" rows="5">{{ setting.value if setting else default.value }}</textarea>
       {% else %}
       <input class="form-control form-control-lg" name="{{ key }}" value="{{ setting.value if setting else default.value }}">

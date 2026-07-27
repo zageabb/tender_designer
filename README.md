@@ -32,11 +32,19 @@ Tender Designer is a Flask application for managing tenders, uploaded documents,
 
 ## Setup
 
+Tender Designer now requires an administrator login. Configure the login and Flask session
+secret before starting the server:
+
 ```bash
 cd tender_designer
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+
+export SECRET_KEY="replace-with-a-long-random-secret"
+export ADMIN_USERNAME="admin"
+export ADMIN_PASSWORD="replace-with-a-strong-password"
+
 flask --app app run --host=0.0.0.0 --port=5050
 ```
 
@@ -46,6 +54,81 @@ Or use the included launcher:
 cd tender_designer
 ./start_tender_designer.sh
 ```
+
+## Login And Security Configuration
+
+After starting Tender Designer, open:
+
+```text
+http://SERVER_IP:5050
+```
+
+Unauthenticated users are redirected to `/auth/login`. Sign in with the values configured in:
+
+- `ADMIN_USERNAME`
+- `ADMIN_PASSWORD`
+
+If neither `ADMIN_PASSWORD` nor `ADMIN_PASSWORD_HASH` is configured, the application still starts
+but the login button remains disabled. Set one of those variables and restart the application.
+
+For a production/server deployment, set:
+
+```bash
+export TENDER_DESIGNER_PRODUCTION=true
+export SECRET_KEY="replace-with-a-long-unique-random-value"
+export ADMIN_USERNAME="admin"
+export ADMIN_PASSWORD="replace-with-a-strong-password"
+export MAIL_APP_PASSWORD="your-mail-provider-app-password"
+```
+
+When the application is served over HTTPS, also set:
+
+```bash
+export SESSION_COOKIE_SECURE=true
+```
+
+Production mode refuses to start if `SECRET_KEY` or an administrator password is missing.
+Changing `SECRET_KEY` signs out existing sessions.
+
+### Using A Hashed Administrator Password
+
+`ADMIN_PASSWORD_HASH` can be used instead of storing the administrator password directly in the
+environment. Generate a Werkzeug-compatible hash:
+
+```bash
+python3 -c "from werkzeug.security import generate_password_hash; print(generate_password_hash(input('Password: ')))"
+```
+
+Then configure the resulting value:
+
+```bash
+export ADMIN_USERNAME="admin"
+export ADMIN_PASSWORD_HASH="paste-the-generated-hash-here"
+unset ADMIN_PASSWORD
+```
+
+Restart Tender Designer after changing any login or security variable.
+
+### Existing Database Upgrade
+
+After pulling the authentication/security upgrade into an existing installation, record the
+Alembic baseline once:
+
+```bash
+source .venv/bin/activate
+flask --app app db stamp 39d988e8d221
+```
+
+New empty databases can be created from migrations with:
+
+```bash
+TENDER_DESIGNER_MIGRATION_MODE=true flask --app app db upgrade
+```
+
+### Login Recovery
+
+If the password is forgotten, set a new `ADMIN_PASSWORD` in the service environment and restart
+Tender Designer. The administrator account is environment-backed, so no database reset is needed.
 
 ## Network / Server Use
 
@@ -58,10 +141,15 @@ The app is configured to run on port `5050` and is intended to be reachable acro
 
 ## Background Workers
 
-Tender Designer starts two in-process background workers when the app boots:
+Tender Designer starts background workers when the app boots:
 
 - Extraction worker: handles metadata, item, question, and answer-drafting jobs
 - Mailbox sync worker: handles Gmail sync jobs
+- Tender monitor worker: checks active tender deadlines and workflow risks
+- Automation scheduler: triggers scheduled mailbox and tender-monitor work
+
+Database-backed leases ensure only one process owns each worker role when multiple WSGI processes
+start the application.
 
 Recent behavior:
 
@@ -99,7 +187,6 @@ Relevant Settings keys:
 
 - `mail_account_email`
 - `mail_username`
-- `mail_app_password`
 - `mail_from_name`
 - `mail_imap_host`
 - `mail_imap_port`
@@ -108,6 +195,9 @@ Relevant Settings keys:
 - `mail_smtp_host`
 - `mail_smtp_port`
 - `mail_use_starttls`
+
+The mailbox password is no longer stored in the Settings database. Configure it with the
+`MAIL_APP_PASSWORD` environment variable.
 
 Current behavior:
 
@@ -160,4 +250,4 @@ You can also load the same dataset from the dashboard using the `Load Sample Dat
 
 ## Template And Prompt Reference
 
-See [TEMPLATE_FIELDS_README.md](/Users/geraldabbot/Documents/Codex/2026-06-26/ini/tender_designer/TEMPLATE_FIELDS_README.md) for the placeholder fields supported by the markdown prompt and email template files.
+See [TEMPLATE_FIELDS_README.md](TEMPLATE_FIELDS_README.md) for the placeholder fields supported by the markdown prompt and email template files.

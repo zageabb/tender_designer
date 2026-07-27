@@ -10,6 +10,7 @@ from database import db
 from models import MailboxSyncJob
 from services.mailbox_service import sync_mailbox, sync_mailbox_folder
 from services.settings_service import get_setting
+from services.worker_lease import acquire_worker_lease
 
 
 _job_queue: queue.Queue[int] = queue.Queue()
@@ -97,6 +98,8 @@ def start_mailbox_sync_worker(app: Flask) -> None:
     global _worker_started, _worker_thread
     with _worker_lock:
         if _worker_started:
+            return
+        if not acquire_worker_lease(app, "mailbox-sync-worker"):
             return
         worker = threading.Thread(target=_worker_loop, args=(app,), name="mailbox-sync-worker", daemon=True)
         worker.start()

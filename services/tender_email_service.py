@@ -7,6 +7,7 @@ from pathlib import Path
 from models import Tender, TenderDocument, TenderEmail, TenderEmailDocument
 from services.file_storage import ensure_tender_directories
 from services.prompt_service import render_prompt
+from services.managed_paths import resolve_managed_path
 from services.settings_service import get_setting
 
 
@@ -62,8 +63,9 @@ def create_tender_email_draft(
     body_text: str,
 ) -> TenderEmail:
     for document in documents:
-        path = Path(document.file_path or "")
-        if not path.exists():
+        try:
+            resolve_managed_path(data_dir, document.file_path or "", must_exist=True)
+        except ValueError:
             raise FileNotFoundError(f"The file {document.original_filename} is missing and could not be attached.")
     tender_email = TenderEmail(
         tender=tender,
@@ -97,7 +99,7 @@ def write_tender_email_eml(
     message["From"] = "noreply@tenderdesigner.local"
     message.set_content(tender_email.body_text or "")
     for document in documents:
-        path = Path(document.file_path)
+        path = resolve_managed_path(data_dir, document.file_path, must_exist=True)
         mime_type, _ = mimetypes.guess_type(path.name)
         if mime_type:
             maintype, subtype = mime_type.split("/", 1)

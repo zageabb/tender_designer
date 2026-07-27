@@ -20,6 +20,7 @@ from models import MailboxAttachment, MailboxDeletionRequest, MailboxMessage, Ma
 from sqlalchemy.exc import OperationalError
 from services.document_extraction import extract_text
 from services.file_storage import ensure_tender_directories, save_tender_bytes
+from services.managed_paths import ManagedPathError, resolve_managed_path
 from services.settings_service import get_setting
 
 
@@ -729,8 +730,9 @@ def _create_body_document(data_dir: Path, tender: Tender, mailbox_message: Mailb
 
 def _import_mailbox_attachments(data_dir: Path, tender: Tender, mailbox_message: MailboxMessage) -> None:
     for attachment in mailbox_message.attachments:
-        path = Path(attachment.file_path or "")
-        if not path.exists():
+        try:
+            path = resolve_managed_path(data_dir, attachment.file_path or "", must_exist=True)
+        except ManagedPathError:
             continue
         original_name, stored_name, saved_path = save_tender_bytes(
             data_dir,

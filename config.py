@@ -9,15 +9,26 @@ DATA_DIR = BASE_DIR / "data"
 
 
 class Config:
-    SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key")
+    SECRET_KEY = os.environ.get("SECRET_KEY") or os.urandom(32).hex()
     SQLALCHEMY_DATABASE_URI = os.environ.get(
         "DATABASE_URL",
         f"sqlite:///{BASE_DIR / 'tender_designer.db'}",
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    SQLALCHEMY_ENGINE_OPTIONS = {"connect_args": {"check_same_thread": False, "timeout": 30}}
+    SQLALCHEMY_ENGINE_OPTIONS = (
+        {"connect_args": {"check_same_thread": False, "timeout": 30}}
+        if SQLALCHEMY_DATABASE_URI.startswith("sqlite:")
+        else {}
+    )
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024
     DATA_DIR = Path(os.environ.get("DATA_DIR", DATA_DIR))
+    ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
+    ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+    ADMIN_PASSWORD_HASH = os.environ.get("ADMIN_PASSWORD_HASH", "")
+    PRODUCTION_MODE = os.environ.get("TENDER_DESIGNER_PRODUCTION", "").lower() in {"1", "true", "yes"}
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = "Lax"
+    SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "").lower() in {"1", "true", "yes"}
     OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://192.168.1.249:11434")
     LLM_MODELS = {
         "orchestrator": os.environ.get("LLM_ORCHESTRATOR_MODEL", "llama3.2"),
