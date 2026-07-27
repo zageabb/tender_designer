@@ -80,7 +80,7 @@ if (computerFinderForm) {
     computerFinderSaveActions?.classList.add("d-none");
     setComputerFinderSaveStatus("");
     renderComputerFinderSteps([]);
-    setComputerFinderStatus("Searching configured websites and reading candidate product pages...", "info");
+    setComputerFinderStatus("Searching the web, reviewing sources, and comparing product evidence...", "info");
     submitButton.disabled = true;
     submitButton.dataset.originalText = submitButton.textContent;
     submitButton.textContent = "Searching...";

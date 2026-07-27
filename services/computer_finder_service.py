@@ -8,6 +8,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 import requests
 
+from services.agentic_web_search import DDGSSearchProvider, OllamaWebResearchAgent, WebPageReader
 from services.ollama_client import OllamaClient
 from services.prompt_service import render_prompt
 from services.settings_service import get_setting, get_task_model
@@ -28,6 +29,9 @@ class ComputerFinderConfigError(ValueError):
 
 @dataclass(frozen=True)
 class ComputerFinderConfig:
+    search_provider: str
+    search_backend: str
+    max_search_rounds: int
     ollama_url: str
     model: str
     searxng_url: str
@@ -79,15 +83,23 @@ def get_computer_finder_config() -> ComputerFinderConfig:
     if not allowed_domains:
         raise ComputerFinderConfigError("Add at least one searchable website domain for the computer finder.")
 
-    ollama_url = get_setting("ollama_url")
+    search_provider = (get_setting("computer_finder_search_provider") or "ollama_agent").strip().lower()
+    if search_provider not in {"ollama_agent", "direct"}:
+        search_provider = "ollama_agent"
+    ollama_url = get_setting("ollama_url") or ""
     if not ollama_url:
-        raise ComputerFinderConfigError("Set the Ollama URL before running a computer search.")
+        raise ComputerFinderConfigError("Set the Ollama URL before running Computer Finder.")
 
     return ComputerFinderConfig(
+        search_provider=search_provider,
+        search_backend=(get_setting("computer_finder_search_backend") or "auto").strip().lower(),
+        max_search_rounds=_int_setting("computer_finder_max_search_rounds", 3, minimum=1, maximum=5),
         ollama_url=ollama_url,
         model=(get_setting("computer_finder_model") or get_task_model("chat_answering") or "llama3.2").strip(),
-        searxng_url=(get_setting("computer_finder_searxng_url") or "").strip().rstrip("/"),
-        searxng_engines=(get_setting("computer_finder_searxng_engines") or "").strip(),
+        # Retained on the config object for compatibility with the legacy helper
+        # functions, but SearXNG is no longer part of the active search path.
+        searxng_url="",
+        searxng_engines="",
         search_results_per_domain=_int_setting("computer_finder_results_per_domain", 3, minimum=1, maximum=8),
         max_pages_to_read=_int_setting("computer_finder_max_pages_to_read", 8, minimum=1, maximum=20),
         allowed_domains=allowed_domains,
@@ -103,14 +115,17 @@ def find_computer_for_spec(computer_spec: str, config: ComputerFinderConfig | No
         raise ComputerFinderConfigError("Enter a computer specification before searching.")
 
     config = config or get_computer_finder_config()
+    if config.search_provider == "ollama_agent":
+        return _find_with_ollama_research_agent(computer_spec, config)
+
     client = OllamaClient(config.ollama_url)
     search_plan, planning_steps = _plan_searches(client, config.model, computer_spec, config)
     search_results, search_steps = _collect_search_results(computer_spec, search_plan, config)
     page_context, page_steps = _build_page_context(search_results, config)
     if not page_context:
         raise ComputerFinderConfigError(
-            "SearXNG is connected, but it returned no readable product results for the planner queries or configured-domain refinement. "
-            "Check the search diagnostics below; the likely cause is blocked or rate-limited upstream search engines.",
+            "The legacy direct search returned no readable product results. "
+            "Use OpenAI web search for the more reliable agentic search path, or check the diagnostics below.",
             [*planning_steps, *search_steps, *page_steps],
         )
 
@@ -130,6 +145,32 @@ def find_computer_for_spec(computer_spec: str, config: ComputerFinderConfig | No
             f"Generated final recommendation from {len(sources)} sourced result(s).",
         ],
     }
+
+
+def _find_with_ollama_research_agent(computer_spec: str, config: ComputerFinderConfig) -> dict:
+    market = ", ".join(part for part in [config.city, config.region, config.country] if part) or "the configured market"
+    region = {
+        "GB": "uk-en",
+        "US": "us-en",
+        "CA": "ca-en",
+        "AU": "au-en",
+        "IE": "ie-en",
+    }.get(config.country, "wt-wt")
+    agent = OllamaWebResearchAgent(
+        ollama_url=config.ollama_url,
+        model=config.model,
+        search_provider=DDGSSearchProvider(region=region, backend=config.search_backend),
+        page_reader=WebPageReader(),
+        allowed_domains=config.allowed_domains,
+        blocked_domains=config.blocked_domains,
+        max_rounds=config.max_search_rounds,
+        max_pages=config.max_pages_to_read,
+        results_per_query=config.search_results_per_domain,
+    )
+    try:
+        return agent.research(computer_spec.strip(), market, date.today().isoformat())
+    except ValueError as exc:
+        raise ComputerFinderConfigError(str(exc)) from exc
 
 
 def build_computer_finder_prompt(computer_spec: str, search_results_context: str, config: ComputerFinderConfig) -> str:
