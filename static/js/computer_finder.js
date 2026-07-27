@@ -5,6 +5,9 @@ const computerFinderResult = document.getElementById("computer-finder-result");
 const computerFinderSources = document.getElementById("computer-finder-sources");
 const computerFinderSteps = document.getElementById("computer-finder-steps");
 const computerFinderClear = document.getElementById("computer-finder-clear");
+const computerFinderSaveActions = document.getElementById("computer-finder-save-actions");
+const computerFinderSaveStatus = document.getElementById("computer-finder-save-status");
+let latestComputerFinderResult = null;
 
 function setComputerFinderStatus(message, kind = "secondary") {
   if (!computerFinderStatus) return;
@@ -46,6 +49,21 @@ function renderComputerFinderSteps(steps) {
   computerFinderSteps.innerHTML = renderComputerFinderMarkdown(steps.map((step) => `- ${step}`).join("\n"));
 }
 
+function setComputerFinderSaveStatus(message, kind = "muted") {
+  if (!computerFinderSaveStatus) return;
+  computerFinderSaveStatus.className = `small mt-2 text-${kind}`;
+  computerFinderSaveStatus.textContent = message;
+}
+
+async function computerFinderJsonResponse(response) {
+  const responseText = await response.text();
+  try {
+    return responseText ? JSON.parse(responseText) : {};
+  } catch (parseError) {
+    return { message: responseText || parseError.message };
+  }
+}
+
 if (computerFinderForm) {
   computerFinderForm.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -58,6 +76,9 @@ if (computerFinderForm) {
     }
     computerFinderResult.innerHTML = "";
     computerFinderSources.innerHTML = "";
+    latestComputerFinderResult = null;
+    computerFinderSaveActions?.classList.add("d-none");
+    setComputerFinderSaveStatus("");
     renderComputerFinderSteps([]);
     setComputerFinderStatus("Searching configured websites and reading candidate product pages...", "info");
     submitButton.disabled = true;
@@ -69,13 +90,7 @@ if (computerFinderForm) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ spec }),
       });
-      const responseText = await response.text();
-      let payload = {};
-      try {
-        payload = responseText ? JSON.parse(responseText) : {};
-      } catch (parseError) {
-        payload = { message: responseText || parseError.message };
-      }
+      const payload = await computerFinderJsonResponse(response);
       if (!response.ok || !payload.ok) {
         renderComputerFinderSteps(payload.steps || []);
         throw new Error(payload.message || "Computer search failed.");
@@ -83,6 +98,12 @@ if (computerFinderForm) {
       computerFinderResult.innerHTML = renderComputerFinderMarkdown(payload.message || "");
       renderComputerFinderSources(payload.sources || []);
       renderComputerFinderSteps(payload.steps || []);
+      latestComputerFinderResult = {
+        spec,
+        message: payload.message || "",
+        sources: payload.sources || [],
+      };
+      computerFinderSaveActions?.classList.remove("d-none");
       setComputerFinderStatus("Search complete.", "success");
     } catch (error) {
       setComputerFinderStatus(error.message, "danger");
@@ -98,10 +119,79 @@ if (computerFinderClear) {
     document.getElementById("computer-spec").value = "";
     computerFinderResult.innerHTML = "";
     computerFinderSources.innerHTML = "";
+    latestComputerFinderResult = null;
+    computerFinderSaveActions?.classList.add("d-none");
+    setComputerFinderSaveStatus("");
     renderComputerFinderSteps([]);
     setComputerFinderStatus("Ready for a spec.", "secondary");
   });
 }
+
+document.getElementById("computer-finder-download")?.addEventListener("click", async () => {
+  if (!latestComputerFinderResult || !computerFinderSaveActions) return;
+  setComputerFinderSaveStatus("Preparing download...");
+  try {
+    const response = await fetch(computerFinderSaveActions.dataset.exportUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(latestComputerFinderResult),
+    });
+    if (!response.ok) {
+      const result = await computerFinderJsonResponse(response);
+      throw new Error(result.message || "Could not export the result.");
+    }
+    const blob = await response.blob();
+    const disposition = response.headers.get("Content-Disposition") || "";
+    const filenameMatch = disposition.match(/filename=\"?([^\";]+)\"?/i);
+    const downloadUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = filenameMatch?.[1] || "computer_finder_result.md";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(downloadUrl);
+    setComputerFinderSaveStatus("Result downloaded.", "success");
+  } catch (error) {
+    setComputerFinderSaveStatus(error.message, "danger");
+  }
+});
+
+document.getElementById("computer-finder-attach")?.addEventListener("click", async () => {
+  if (!latestComputerFinderResult || !computerFinderSaveActions) return;
+  const tenderSelect = document.getElementById("computer-finder-tender");
+  const attachButton = document.getElementById("computer-finder-attach");
+  const tenderId = tenderSelect?.value;
+  if (!tenderId) {
+    setComputerFinderSaveStatus("Choose a tender first.", "warning");
+    return;
+  }
+  attachButton.disabled = true;
+  setComputerFinderSaveStatus("Saving result to tender...");
+  try {
+    const response = await fetch(computerFinderSaveActions.dataset.attachUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...latestComputerFinderResult, tender_id: tenderId }),
+    });
+    const result = await computerFinderJsonResponse(response);
+    if (!response.ok || !result.ok) {
+      throw new Error(result.message || "Could not save the result to the tender.");
+    }
+    setComputerFinderSaveStatus(result.message || "Result saved to tender.", "success");
+    if (result.tender_url && computerFinderSaveStatus) {
+      computerFinderSaveStatus.append(" ");
+      const tenderLink = document.createElement("a");
+      tenderLink.href = result.tender_url;
+      tenderLink.textContent = "Open tender";
+      computerFinderSaveStatus.appendChild(tenderLink);
+    }
+  } catch (error) {
+    setComputerFinderSaveStatus(error.message, "danger");
+  } finally {
+    attachButton.disabled = false;
+  }
+});
 
 if (computerFinderSettingsForm) {
   computerFinderSettingsForm.addEventListener("submit", async (event) => {
