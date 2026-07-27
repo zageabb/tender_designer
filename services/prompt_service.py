@@ -14,10 +14,13 @@ PROMPT_FILES = {
             "# Metadata Extraction Prompt\n\n"
             "You are extracting tender metadata from tender documents.\n"
             "Return JSON only with keys: customer_name, tender_number, title, status, "
-            "submission_date, submission_time, award_date, currency, notes.\n"
+            "submission_date, submission_time, submission_type, award_date, currency, notes.\n"
+            "submission_type must be one of: Email, Portal, Postal, Hand delivered.\n"
             "Use null for values that are not clearly supported by the text.\n"
             "Prefer ISO dates when possible.\n"
-            "Keep notes concise and factual.\n\n"
+            "Keep notes concise and factual.\n"
+            "Return deadline dates and times supersede submission date and submission times.\n"
+            "Summarised Specification supersedes generic title.\n\n"
             "Tender text:\n{{tender_text}}\n"
         ),
     },

@@ -781,6 +781,7 @@ def create_tender_from_mailbox_message(data_dir: Path, mailbox_message: MailboxM
         tender_number=f"AUTO-EMAIL-{timestamp}",
         title=(mailbox_message.subject or "Mailbox Email")[:255],
         status="Documents Uploaded",
+        submission_type="Email",
     )
     db.session.add(tender)
     db.session.flush()

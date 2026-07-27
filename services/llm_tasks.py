@@ -68,6 +68,24 @@ def _parse_time_value(value: str | None) -> str | None:
     return f"{time_value} {meridiem.upper()}".strip() if meridiem else time_value
 
 
+def _parse_submission_type(value: str | None) -> str | None:
+    normalized = re.sub(r"[\s_-]+", " ", str(value or "").strip().lower())
+    aliases = {
+        "email": "Email",
+        "e mail": "Email",
+        "portal": "Portal",
+        "online portal": "Portal",
+        "e tendering portal": "Portal",
+        "postal": "Postal",
+        "post": "Postal",
+        "by post": "Postal",
+        "hand delivered": "Hand delivered",
+        "hand delivery": "Hand delivered",
+        "delivered by hand": "Hand delivered",
+    }
+    return aliases.get(normalized)
+
+
 def extract_tender_metadata(
     client: OllamaClient,
     tender: Tender,
@@ -96,6 +114,7 @@ def extract_tender_metadata(
         tender.status = parsed.get("status") or tender.status
         tender.submission_date = _parse_date_value(parsed.get("submission_date")) or tender.submission_date
         tender.submission_time = _parse_time_value(parsed.get("submission_time")) or tender.submission_time
+        tender.submission_type = _parse_submission_type(parsed.get("submission_type")) or tender.submission_type
         tender.award_date = _parse_date_value(parsed.get("award_date")) or tender.award_date
         tender.currency = parsed.get("currency") or tender.currency
         tender.notes = "\n".join(filter(None, [tender.notes, parsed.get("notes")])).strip() or None
@@ -205,6 +224,16 @@ def _fallback_metadata(text: str) -> dict:
             break
     submission_time_match = re.search(r"\b(\d{1,2}:\d{2})\b", text)
     submission_date_match = re.search(r"\b(20\d{2}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b", text)
+    submission_type = None
+    lowered_text = text.lower()
+    if re.search(r"\b(portal|e-?tender(?:ing)?)\b", lowered_text):
+        submission_type = "Portal"
+    elif re.search(r"\b(hand deliver(?:ed|y)|delivered by hand)\b", lowered_text):
+        submission_type = "Hand delivered"
+    elif re.search(r"\b(postal|by post)\b", lowered_text):
+        submission_type = "Postal"
+    elif re.search(r"\b(e-?mail|email)\b", lowered_text):
+        submission_type = "Email"
     return {
         "customer_name": customer_name,
         "tender_number": None,
@@ -212,6 +241,7 @@ def _fallback_metadata(text: str) -> dict:
         "status": "Metadata Extracted",
         "submission_date": submission_date_match.group(1) if submission_date_match else None,
         "submission_time": submission_time_match.group(1) if submission_time_match else None,
+        "submission_type": submission_type,
         "award_date": None,
         "currency": "GBP",
         "notes": "Fallback metadata extraction used.",

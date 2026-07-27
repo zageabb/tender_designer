@@ -20,6 +20,7 @@ from services.extraction_jobs import start_extraction_worker
 from services.mailbox_jobs import start_mailbox_sync_worker
 from services.markdown_tools import render_markdown_html
 from services.settings_service import ensure_default_settings
+from services.schema_migrations import apply_schema_migrations
 from services.tender_monitor import start_tender_monitor_worker
 
 
@@ -34,6 +35,7 @@ def create_app() -> Flask:
         import models  # noqa: F401
 
         db.create_all()
+        apply_schema_migrations()
         ensure_default_settings(db)
     app.jinja_env.globals["render_markdown_html"] = render_markdown_html
 
