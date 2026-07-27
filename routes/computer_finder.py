@@ -21,9 +21,10 @@ computer_finder_bp = Blueprint("computer_finder", __name__, url_prefix="/compute
 
 
 COMPUTER_FINDER_SETTING_KEYS = [
+    "computer_finder_search_provider",
+    "computer_finder_search_backend",
+    "computer_finder_max_search_rounds",
     "computer_finder_model",
-    "computer_finder_searxng_url",
-    "computer_finder_searxng_engines",
     "computer_finder_results_per_domain",
     "computer_finder_max_pages_to_read",
     "computer_finder_allowed_domains",
@@ -185,6 +186,12 @@ def update_settings():
             value = "\n".join(parse_domain_list(value))
         if key == "computer_finder_market_country":
             value = value.upper()
+        if key == "computer_finder_search_provider" and value not in {"ollama_agent", "direct"}:
+            value = "ollama_agent"
+        if key == "computer_finder_search_backend" and value not in {
+            "auto", "bing", "brave", "duckduckgo", "google", "mojeek", "startpage", "yahoo", "yandex"
+        }:
+            value = "auto"
         record.value = value
     db.session.commit()
     return jsonify(
@@ -199,4 +206,7 @@ def update_settings():
 
 
 def _current_settings() -> dict:
-    return {key: get_setting(key, DEFAULT_SETTINGS[key]["value"]) or "" for key in COMPUTER_FINDER_SETTING_KEYS}
+    values = {key: get_setting(key, DEFAULT_SETTINGS[key]["value"]) or "" for key in COMPUTER_FINDER_SETTING_KEYS}
+    if values["computer_finder_search_provider"] not in {"ollama_agent", "direct"}:
+        values["computer_finder_search_provider"] = "ollama_agent"
+    return values

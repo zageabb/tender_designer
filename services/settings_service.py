@@ -134,7 +134,19 @@ DEFAULT_SETTINGS = {
     },
     "computer_finder_model": {
         "value": "llama3.2",
-        "description": "Ollama model used to plan searches and recommend a computer from sourced web results.",
+        "description": "Ollama model used only by the legacy direct computer search provider.",
+    },
+    "computer_finder_search_provider": {
+        "value": "ollama_agent",
+        "description": "Computer Finder mode. The Ollama agent performs iterative search, page reading, gap analysis and cited synthesis.",
+    },
+    "computer_finder_search_backend": {
+        "value": "auto",
+        "description": "DDGS metasearch backend, such as auto, brave, bing, duckduckgo, google, mojeek, or startpage.",
+    },
+    "computer_finder_max_search_rounds": {
+        "value": "3",
+        "description": "Maximum plan-search-read-refine rounds performed by the Ollama research agent.",
     },
     "computer_finder_searxng_url": {
         "value": "http://192.168.1.249:8081",
