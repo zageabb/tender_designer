@@ -320,6 +320,13 @@ class MailboxSyncJob(TimestampMixin, db.Model):
     completed_at = db.Column(db.DateTime)
 
 
+class WorkerLease(db.Model):
+    name = db.Column(db.String(100), primary_key=True)
+    owner_id = db.Column(db.String(255), nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+
 class TenderMonitorAlert(TimestampMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     tender_id = db.Column(db.Integer, db.ForeignKey("tender.id"), nullable=False)

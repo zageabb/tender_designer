@@ -8,6 +8,7 @@ from flask import Blueprint, current_app, flash, redirect, render_template, requ
 from database import db
 from models import RFQ, Tender
 from services.mailbox_service import send_eml_file
+from services.managed_paths import ManagedPathError, resolve_managed_path, unlink_managed_file
 from services.rfq_service import create_rfq_for_selection, write_rfq_eml
 
 
@@ -99,8 +100,9 @@ def edit_rfq(rfq_id: int):
 @rfqs_bp.route("/<int:rfq_id>/download")
 def download_rfq(rfq_id: int):
     rfq = RFQ.query.get_or_404(rfq_id)
-    path = Path(rfq.eml_file_path or "")
-    if not path.exists():
+    try:
+        path = resolve_managed_path(current_app.config["DATA_DIR"], rfq.eml_file_path or "", must_exist=True)
+    except ManagedPathError:
         flash("The RFI EML file is missing.", "danger")
         return redirect(url_for("rfqs.view_rfq", rfq_id=rfq.id))
     return send_file(path, as_attachment=True, download_name=path.name, mimetype="message/rfc822")
@@ -110,7 +112,8 @@ def download_rfq(rfq_id: int):
 def send_rfq_direct(rfq_id: int):
     rfq = RFQ.query.get_or_404(rfq_id)
     try:
-        send_eml_file(rfq.eml_file_path or "")
+        eml_path = resolve_managed_path(current_app.config["DATA_DIR"], rfq.eml_file_path or "", must_exist=True)
+        send_eml_file(eml_path)
         rfq.status = "Sent Direct"
         rfq.sent_at = datetime.utcnow()
         db.session.commit()
@@ -126,10 +129,13 @@ def delete_rfq(rfq_id: int):
     rfq = RFQ.query.get_or_404(rfq_id)
     tender_id = rfq.tender_id
     subject = rfq.subject
-    eml_path = Path(rfq.eml_file_path) if rfq.eml_file_path else None
+    eml_path = rfq.eml_file_path
     db.session.delete(rfq)
     db.session.commit()
-    if eml_path and eml_path.exists():
-        eml_path.unlink()
+    try:
+        unlink_managed_file(current_app.config["DATA_DIR"], eml_path)
+    except ManagedPathError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("rfqs.view_rfq", rfq_id=rfq.id))
     flash(f"Deleted RFI: {subject}.", "success")
     return redirect(url_for("tenders.detail_tender", tender_id=tender_id))

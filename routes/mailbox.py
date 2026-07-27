@@ -20,6 +20,7 @@ from services.mailbox_service import (
     normalize_conversation_subject,
     send_composed_message,
 )
+from services.managed_paths import ManagedPathError, resolve_managed_path
 
 
 mailbox_bp = Blueprint("mailbox", __name__, url_prefix="/mailbox")
@@ -222,7 +223,12 @@ def view_message(message_id: int):
 def download_attachment(message_id: int, attachment_id: int):
     mailbox_message = MailboxMessage.query.get_or_404(message_id)
     attachment = MailboxAttachment.query.filter_by(id=attachment_id, mailbox_message_id=mailbox_message.id).first_or_404()
-    return send_file(attachment.file_path, as_attachment=True, download_name=attachment.original_filename)
+    try:
+        path = resolve_managed_path(current_app.config["DATA_DIR"], attachment.file_path, must_exist=True)
+    except ManagedPathError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("mailbox.view_message", message_id=message_id))
+    return send_file(path, as_attachment=True, download_name=attachment.original_filename)
 
 
 @mailbox_bp.route("/<int:message_id>/create-tender", methods=["POST"])

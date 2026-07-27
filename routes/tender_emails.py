@@ -7,6 +7,7 @@ from flask import Blueprint, current_app, flash, redirect, render_template, requ
 from database import db
 from models import Tender, TenderDocument, TenderEmail
 from services.mailbox_service import send_eml_file
+from services.managed_paths import ManagedPathError, resolve_managed_path, unlink_managed_file
 from services.tender_email_service import build_tender_email_defaults, create_tender_email_draft, write_tender_email_eml
 
 
@@ -138,8 +139,9 @@ def edit_tender_email(tender_email_id: int):
 @tender_emails_bp.route("/<int:tender_email_id>/download")
 def download_tender_email(tender_email_id: int):
     tender_email = TenderEmail.query.get_or_404(tender_email_id)
-    path = Path(tender_email.eml_file_path or "")
-    if not path.exists():
+    try:
+        path = resolve_managed_path(current_app.config["DATA_DIR"], tender_email.eml_file_path or "", must_exist=True)
+    except ManagedPathError:
         flash("The tender email EML file is missing.", "danger")
         return redirect(url_for("tender_emails.view_tender_email", tender_email_id=tender_email.id))
     return send_file(path, as_attachment=True, download_name=path.name, mimetype="message/rfc822")
@@ -149,7 +151,10 @@ def download_tender_email(tender_email_id: int):
 def send_tender_email(tender_email_id: int):
     tender_email = TenderEmail.query.get_or_404(tender_email_id)
     try:
-        send_eml_file(tender_email.eml_file_path or "")
+        eml_path = resolve_managed_path(
+            current_app.config["DATA_DIR"], tender_email.eml_file_path or "", must_exist=True
+        )
+        send_eml_file(eml_path)
         tender_email.status = "Sent Direct"
         db.session.commit()
         flash(f"Tender email sent directly to {tender_email.recipient_email or 'the configured recipient list'}.", "success")
@@ -164,10 +169,13 @@ def delete_tender_email(tender_email_id: int):
     tender_email = TenderEmail.query.get_or_404(tender_email_id)
     tender_id = tender_email.tender_id
     subject = tender_email.subject
-    eml_path = Path(tender_email.eml_file_path) if tender_email.eml_file_path else None
+    eml_path = tender_email.eml_file_path
     db.session.delete(tender_email)
     db.session.commit()
-    if eml_path and eml_path.exists():
-        eml_path.unlink()
+    try:
+        unlink_managed_file(current_app.config["DATA_DIR"], eml_path)
+    except ManagedPathError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("tender_emails.view_tender_email", tender_email_id=tender_email.id))
     flash(f"Deleted tender email draft: {subject}.", "success")
     return redirect(url_for("tenders.detail_tender", tender_id=tender_id, _anchor="tender-emails"))

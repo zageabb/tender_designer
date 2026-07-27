@@ -12,6 +12,7 @@ from models import ChatAction, ChatMessage, ChatSession, ChatUpload, MailboxMess
 from services.file_storage import ensure_tender_directories, save_tender_bytes
 from services.mailbox_service import send_composed_message
 from services.markdown_tools import extracted_text_suffix
+from services.managed_paths import resolve_managed_path
 from services.ollama_client import OllamaClient
 from services.prompt_service import render_prompt
 from services.settings_service import get_setting, get_task_model
@@ -863,8 +864,6 @@ def _computer_finder_context_response(page_context: dict | None) -> tuple[str, l
     diagnostics = _markdown_text(context.get("computer_finder_diagnostics"))
     sources = _markdown_text(context.get("computer_finder_sources"))
     allowed_domains = _markdown_text(context.get("computer_finder_allowed_domains"))
-    searxng_url = _markdown_text(context.get("computer_finder_searxng_url"))
-    searxng_engines = _markdown_text(context.get("computer_finder_searxng_engines"))
 
     if not spec and not result and not diagnostics:
         return (
@@ -887,14 +886,9 @@ def _computer_finder_context_response(page_context: dict | None) -> tuple[str, l
         lines.append(f"\n**Current search diagnostics:**\n{diagnostics[:1600]}")
     if sources:
         lines.append(f"\n**Visible sources:**\n{sources[:1000]}")
-    if searxng_url or allowed_domains:
+    if allowed_domains:
         lines.append("\n**Search setup:**")
-        if searxng_url:
-            lines.append(f"- SearXNG: {searxng_url}")
-        if searxng_engines:
-            lines.append(f"- SearXNG engines: {searxng_engines}")
-        if allowed_domains:
-            lines.append(f"- Allowed domains: {', '.join(allowed_domains.splitlines()[:12])}")
+        lines.append(f"- Allowed domains: {', '.join(allowed_domains.splitlines()[:12])}")
     lines.append("\nAsk me what to change in the spec, why a search failed, or how to compare a returned model against the requirement.")
     return "\n".join(lines), [
         "Read the current Computer Finder page context from the UI.",
@@ -1392,7 +1386,7 @@ def apply_confirmed_action(action: ChatAction, data_dir: Path) -> str:
         db.session.flush()
         tender_dir = ensure_tender_directories(data_dir, tender.id)
         for upload in uploads:
-            original_path = Path(upload.file_path)
+            original_path = resolve_managed_path(data_dir, upload.file_path, must_exist=True)
             destination = tender_dir / "original_documents" / upload.stored_filename
             destination.write_bytes(original_path.read_bytes())
             extracted_path = tender_dir / "extracted_text" / f"{upload.stored_filename}{extracted_text_suffix(upload.extracted_text)}"

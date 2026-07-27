@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 
 from models import AppSetting
@@ -148,14 +149,6 @@ DEFAULT_SETTINGS = {
         "value": "3",
         "description": "Maximum plan-search-read-refine rounds performed by the Ollama research agent.",
     },
-    "computer_finder_searxng_url": {
-        "value": "http://192.168.1.249:8081",
-        "description": "Optional SearXNG base URL used as the primary web search provider for Computer Finder.",
-    },
-    "computer_finder_searxng_engines": {
-        "value": "google,bing",
-        "description": "Optional comma-separated SearXNG engines for Computer Finder searches. Leave blank to use SearXNG defaults.",
-    },
     "computer_finder_results_per_domain": {
         "value": "3",
         "description": "Maximum site-restricted search results to collect from each configured website.",
@@ -215,6 +208,8 @@ def ensure_default_settings(db) -> None:
 
 
 def get_setting(key: str, fallback: str | None = None) -> str | None:
+    if key == "mail_app_password":
+        return os.environ.get("MAIL_APP_PASSWORD") or fallback or ""
     setting = AppSetting.query.filter_by(key=key).first()
     if setting is not None and setting.value is not None:
         return setting.value

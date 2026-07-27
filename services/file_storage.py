@@ -33,6 +33,7 @@ def save_tender_upload(
     tender_dir = ensure_tender_directories(base_data_dir, tender_id)
     original_name = secure_filename(upload.filename or "upload")
     extension = Path(original_name).suffix.lower()
+    stored_name = secure_filename(Path(stored_name).name) if stored_name else f"{uuid.uuid4().hex}{extension}"
     stored_name = stored_name or f"{uuid.uuid4().hex}{extension}"
     destination = tender_dir / "original_documents" / stored_name
     upload.save(destination)
@@ -49,6 +50,7 @@ def save_tender_bytes(
     tender_dir = ensure_tender_directories(base_data_dir, tender_id)
     original_name = secure_filename(original_name or "upload")
     extension = Path(original_name).suffix.lower()
+    stored_name = secure_filename(Path(stored_name).name) if stored_name else f"{uuid.uuid4().hex}{extension}"
     stored_name = stored_name or f"{uuid.uuid4().hex}{extension}"
     destination = tender_dir / "original_documents" / stored_name
     destination.write_bytes(content)
@@ -77,6 +79,7 @@ def save_chat_bytes(
     chat_dir.mkdir(parents=True, exist_ok=True)
     original_name = secure_filename(original_name or "upload")
     extension = Path(original_name).suffix.lower()
+    stored_name = secure_filename(Path(stored_name).name) if stored_name else f"{uuid.uuid4().hex}{extension}"
     stored_name = stored_name or f"{uuid.uuid4().hex}{extension}"
     destination = chat_dir / stored_name
     destination.write_bytes(content)

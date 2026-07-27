@@ -34,8 +34,6 @@ class ComputerFinderConfig:
     max_search_rounds: int
     ollama_url: str
     model: str
-    searxng_url: str
-    searxng_engines: str
     search_results_per_domain: int
     max_pages_to_read: int
     allowed_domains: list[str]
@@ -96,10 +94,6 @@ def get_computer_finder_config() -> ComputerFinderConfig:
         max_search_rounds=_int_setting("computer_finder_max_search_rounds", 3, minimum=1, maximum=5),
         ollama_url=ollama_url,
         model=(get_setting("computer_finder_model") or get_task_model("chat_answering") or "llama3.2").strip(),
-        # Retained on the config object for compatibility with the legacy helper
-        # functions, but SearXNG is no longer part of the active search path.
-        searxng_url="",
-        searxng_engines="",
         search_results_per_domain=_int_setting("computer_finder_results_per_domain", 3, minimum=1, maximum=8),
         max_pages_to_read=_int_setting("computer_finder_max_pages_to_read", 8, minimum=1, maximum=20),
         allowed_domains=allowed_domains,
@@ -362,12 +356,6 @@ def _collect_search_results(computer_spec: str, search_plan: ComputerSearchPlan,
     results: list[dict] = []
     seen_urls: set[str] = set()
     steps: list[str] = []
-    if config.searxng_url:
-        searxng_results, searxng_steps = _collect_searxng_results(computer_spec, search_plan, config, seen_urls)
-        results.extend(searxng_results)
-        steps.extend(searxng_steps)
-        return results, [*steps, "Public search-engine fallback skipped because SearXNG is configured."]
-
     failed_searches = 0
     for domain in config.allowed_domains:
         domain_results = 0
@@ -404,128 +392,6 @@ def _collect_search_results(computer_spec: str, search_plan: ComputerSearchPlan,
         f"Collected {len(results)} candidate result(s).",
         f"Search requests skipped after errors: {failed_searches}." if failed_searches else "All search requests completed without transport errors.",
     ]
-
-
-def _collect_searxng_results(
-    computer_spec: str,
-    search_plan: ComputerSearchPlan,
-    config: ComputerFinderConfig,
-    seen_urls: set[str],
-) -> tuple[list[dict], list[str]]:
-    results: list[dict] = []
-    attempted_queries: list[str] = []
-    unresponsive: dict[str, set[str]] = {}
-    errors: list[str] = []
-    discarded_low_relevance = 0
-    max_results = max(config.max_pages_to_read * 2, 12)
-
-    search_queries = _searxng_query_candidates(search_plan, config)[:12]
-    planner_results = 0
-    refined_results = 0
-    for query_payload in search_queries:
-        if len(results) >= max_results:
-            break
-        query = query_payload["query"]
-        strict_domains = query_payload["strict_domains"]
-        search_mode = query_payload["search_mode"]
-        attempted_queries.append(query)
-        try:
-            payload = _searxng_search(query, config)
-        except Exception as exc:
-            errors.append(f"{query}: {exc}")
-            continue
-        for engine, reason in payload.get("unresponsive_engines") or []:
-            engine_name = str(engine or "unknown")
-            reason_text = str(reason or "unresponsive")
-            unresponsive.setdefault(engine_name, set()).add(reason_text)
-        for result in payload.get("results") or []:
-            url = _normalise_search_url(result.get("url") or "")
-            if not url or url in seen_urls:
-                continue
-            if strict_domains and not _domain_allowed(url, config.allowed_domains, config.blocked_domains):
-                continue
-            if not strict_domains and _domain_blocked(url, config.blocked_domains):
-                continue
-            if not strict_domains and not _result_relevant_to_spec(result, computer_spec, config.allowed_domains):
-                discarded_low_relevance += 1
-                continue
-            seen_urls.add(url)
-            if strict_domains:
-                refined_results += 1
-            else:
-                planner_results += 1
-            results.append(
-                {
-                    "title": result.get("title") or urlparse(url).netloc,
-                    "url": url,
-                    "snippet": result.get("content") or result.get("snippet") or "",
-                    "provider": "SearXNG",
-                    "engine": result.get("engine") or "",
-                    "search_mode": search_mode,
-                }
-            )
-            if len(results) >= max_results:
-                break
-
-    steps = [
-        f"SearXNG provider: {config.searxng_url}",
-        f"SearXNG engines: {config.searxng_engines or 'default'}",
-        f"SearXNG query attempts: {len(attempted_queries)}.",
-        f"SearXNG collected {len(results)} candidate result(s): {planner_results} from planner queries, {refined_results} from configured-domain refinement.",
-    ]
-    if attempted_queries:
-        steps.append("SearXNG tried: " + " | ".join(attempted_queries[:6]) + (" | ..." if len(attempted_queries) > 6 else ""))
-    if unresponsive:
-        summaries = []
-        for engine, reasons in sorted(unresponsive.items()):
-            summaries.append(f"{engine} ({', '.join(sorted(reasons))})")
-        steps.append("SearXNG unresponsive engines: " + "; ".join(summaries[:8]) + ("; ..." if len(summaries) > 8 else ""))
-    if discarded_low_relevance:
-        steps.append(f"Discarded {discarded_low_relevance} low-relevance planner-query result(s) before asking Ollama.")
-    if errors:
-        steps.append("SearXNG request errors: " + " | ".join(errors[:3]) + (" | ..." if len(errors) > 3 else ""))
-    return results, steps
-
-
-def _searxng_query_candidates(search_plan: ComputerSearchPlan, config: ComputerFinderConfig) -> list[dict]:
-    candidates: list[dict] = []
-    seen: set[tuple[str, bool, str]] = set()
-
-    def add(query: str, strict_domains: bool, search_mode: str) -> None:
-        cleaned = " ".join(query.split())
-        key = (cleaned, strict_domains, search_mode)
-        if cleaned and key not in seen:
-            seen.add(key)
-            candidates.append({"query": cleaned, "strict_domains": strict_domains, "search_mode": search_mode})
-
-    for query in search_plan.queries[:6]:
-        add(_query_with_negative_terms(query, search_plan.negative_terms), strict_domains=False, search_mode="planner query")
-    for domain in config.allowed_domains[:8]:
-        for query in search_plan.queries[:2]:
-            add(f"site:{domain} {_query_with_negative_terms(query, search_plan.negative_terms)}", strict_domains=True, search_mode="configured domain refinement")
-    return candidates
-
-
-def _searxng_search(query: str, config: ComputerFinderConfig) -> dict:
-    params = {
-        "q": query,
-        "format": "json",
-        "safesearch": "0",
-        "language": "all",
-    }
-    if config.searxng_engines:
-        params["engines"] = config.searxng_engines
-    response = requests.get(
-        f"{config.searxng_url}/search",
-        params=params,
-        headers={
-            **REQUEST_HEADERS,
-            "Accept": "application/json",
-        },
-        timeout=12,
-    )
-    response.raise_for_status()
-    return response.json()
 
 
 def _duckduckgo_search(query: str) -> list[dict]:

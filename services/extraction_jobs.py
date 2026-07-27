@@ -15,8 +15,10 @@ from services.chat_service import add_chat_message, get_or_create_session
 from services.document_extraction import extract_text
 from services.llm_tasks import extract_tender_items, extract_tender_metadata, extract_tender_questions
 from services.markdown_tools import extracted_text_suffix
+from services.managed_paths import resolve_managed_path, unlink_managed_file
 from services.ollama_client import OllamaClient
 from services.settings_service import get_setting, get_task_model
+from services.worker_lease import acquire_worker_lease
 
 
 _job_queue: queue.Queue[int] = queue.Queue()
@@ -79,6 +81,8 @@ def ensure_extraction_worker(app: Flask) -> bool:
     with _worker_lock:
         worker_alive = bool(_worker_thread and _worker_thread.is_alive())
         if not worker_alive:
+            if not acquire_worker_lease(app, "extraction-worker"):
+                return False
             worker = threading.Thread(target=_worker_loop, args=(app,), name="extraction-worker", daemon=True)
             worker.start()
             _worker_thread = worker
@@ -171,16 +175,13 @@ def _process_selected_documents(app: Flask, tender: Tender, selected_document_id
     for document in selected_documents:
         if document.extracted_text:
             continue
-        text, error = extract_text(document.file_path)
+        text, error = extract_text(resolve_managed_path(app.config["DATA_DIR"], document.file_path, must_exist=True))
         if text:
             extracted_dir = app.config["DATA_DIR"] / "tenders" / str(document.tender_id) / "extracted_text"
             extracted_dir.mkdir(parents=True, exist_ok=True)
             text_path = extracted_dir / f"{document.stored_filename}{extracted_text_suffix(text)}"
-            if document.extracted_text_path and document.extracted_text_path != str(text_path) and os.path.exists(document.extracted_text_path):
-                try:
-                    os.remove(document.extracted_text_path)
-                except OSError:
-                    pass
+            if document.extracted_text_path and document.extracted_text_path != str(text_path):
+                unlink_managed_file(app.config["DATA_DIR"], document.extracted_text_path)
             text_path.write_text(text, encoding="utf-8")
             document.extracted_text = text
             document.extracted_text_path = str(text_path)

@@ -8,6 +8,7 @@ from flask import Flask
 from services.mailbox_jobs import queue_mailbox_sync_job
 from services.settings_service import get_setting
 from services.tender_monitor import request_tender_monitor_scan
+from services.worker_lease import acquire_worker_lease
 
 
 _scheduler_lock = threading.Lock()
@@ -71,6 +72,8 @@ def start_automation_scheduler(app: Flask) -> None:
     global _scheduler_started, _scheduler_thread
     with _scheduler_lock:
         if _scheduler_thread and _scheduler_thread.is_alive():
+            return
+        if not acquire_worker_lease(app, "automation-scheduler"):
             return
         worker = threading.Thread(target=_worker_loop, args=(app,), name="automation-scheduler", daemon=True)
         worker.start()

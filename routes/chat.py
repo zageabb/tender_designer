@@ -20,6 +20,7 @@ from services.chat_service import (
 )
 from services.document_extraction import extract_text
 from services.file_storage import save_chat_bytes, save_chat_upload, save_tender_bytes, save_tender_upload
+from services.managed_paths import unlink_managed_file
 from services.ollama_client import OllamaClient
 from services.settings_service import get_setting, get_task_model
 from services.upload_ingestion import expand_upload_entries
@@ -48,11 +49,7 @@ def clear():
     cleared = 0
     for session in sessions:
         for upload in session.uploads:
-            if upload.file_path and os.path.exists(upload.file_path):
-                try:
-                    os.remove(upload.file_path)
-                except OSError:
-                    pass
+            unlink_managed_file(current_app.config["DATA_DIR"], upload.file_path)
         db.session.delete(session)
         cleared += 1
     db.session.commit()
@@ -195,11 +192,7 @@ def upload():
             )
             text, error = extract_text(saved_path)
             if existing_document is not None:
-                if existing_document.extracted_text_path and os.path.exists(existing_document.extracted_text_path):
-                    try:
-                        os.remove(existing_document.extracted_text_path)
-                    except OSError:
-                        pass
+                unlink_managed_file(current_app.config["DATA_DIR"], existing_document.extracted_text_path)
                 document = existing_document
                 document.stored_filename = stored_name
                 document.file_path = str(saved_path)
