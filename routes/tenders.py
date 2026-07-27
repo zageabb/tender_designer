@@ -39,6 +39,8 @@ TENDER_STATUS_OPTIONS = [
     "Cancelled",
 ]
 
+SUBMISSION_TYPE_OPTIONS = ["Email", "Portal", "Postal", "Hand delivered"]
+
 ITEM_STATUS_OPTIONS = [
     "New",
     "Needs Review",
@@ -98,6 +100,17 @@ def list_tenders():
 @tenders_bp.route("/new", methods=["GET", "POST"])
 def create_tender():
     if request.method == "POST":
+        submission_type = request.form.get("submission_type", "").strip()
+        if submission_type not in SUBMISSION_TYPE_OPTIONS:
+            flash("Choose a valid submission type.", "danger")
+            return render_template(
+                "tenders/form.html",
+                tender=None,
+                tender_status_options=TENDER_STATUS_OPTIONS,
+                submission_type_options=SUBMISSION_TYPE_OPTIONS,
+                form_data=request.form,
+                chat_context={"page": "tender_create"},
+            ), 400
         tender = Tender(
             customer_name=request.form.get("customer_name", "").strip(),
             tender_number=request.form.get("tender_number", "").strip(),
@@ -105,6 +118,7 @@ def create_tender():
             status=request.form.get("status", "New"),
             submission_date=_date_value(request.form.get("submission_date", "")),
             submission_time=request.form.get("submission_time", "").strip() or None,
+            submission_type=submission_type,
             award_date=_date_value(request.form.get("award_date", "")),
             currency=request.form.get("currency", "GBP").strip() or "GBP",
             notes=request.form.get("notes", "").strip() or None,
@@ -118,6 +132,8 @@ def create_tender():
         "tenders/form.html",
         tender=None,
         tender_status_options=TENDER_STATUS_OPTIONS,
+        submission_type_options=SUBMISSION_TYPE_OPTIONS,
+        form_data=None,
         chat_context={"page": "tender_create"},
     )
 
@@ -181,12 +197,24 @@ def _date_value(raw: str):
 def edit_tender(tender_id: int):
     tender = Tender.query.get_or_404(tender_id)
     if request.method == "POST":
+        submission_type = request.form.get("submission_type", "").strip()
+        if submission_type not in SUBMISSION_TYPE_OPTIONS:
+            flash("Choose a valid submission type.", "danger")
+            return render_template(
+                "tenders/form.html",
+                tender=tender,
+                tender_status_options=TENDER_STATUS_OPTIONS,
+                submission_type_options=SUBMISSION_TYPE_OPTIONS,
+                form_data=request.form,
+                chat_context={"page": "tender_edit", "tender_id": tender.id},
+            ), 400
         tender.customer_name = request.form.get("customer_name", "").strip()
         tender.tender_number = request.form.get("tender_number", "").strip()
         tender.title = request.form.get("title", "").strip() or None
         tender.status = request.form.get("status", "New")
         tender.submission_date = _date_value(request.form.get("submission_date", ""))
         tender.submission_time = request.form.get("submission_time", "").strip() or None
+        tender.submission_type = submission_type
         tender.award_date = _date_value(request.form.get("award_date", ""))
         tender.currency = request.form.get("currency", "GBP").strip() or "GBP"
         tender.notes = request.form.get("notes", "").strip() or None
@@ -197,6 +225,8 @@ def edit_tender(tender_id: int):
         "tenders/form.html",
         tender=tender,
         tender_status_options=TENDER_STATUS_OPTIONS,
+        submission_type_options=SUBMISSION_TYPE_OPTIONS,
+        form_data=None,
         chat_context={"page": "tender_edit", "tender_id": tender.id},
     )
 

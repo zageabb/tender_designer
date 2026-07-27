@@ -10,6 +10,7 @@
     <div class="d-flex gap-2 flex-wrap mt-3">
       <span class="badge tender-signal-badge tender-signal-badge-{{ tender_signal.css_modifier }}">{{ tender_signal.label }}</span>
       {% if tender.submission_date %}<span class="badge text-bg-light">Submission {{ tender.submission_date.isoformat() }}</span>{% endif %}
+      {% if tender.submission_type %}<span class="badge text-bg-light">Via {{ tender.submission_type }}</span>{% endif %}
       {% if tender.award_date %}<span class="badge text-bg-light">Award {{ tender.award_date.isoformat() }}</span>{% endif %}
     </div>
   </div>

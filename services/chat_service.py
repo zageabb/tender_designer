@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from pathlib import Path
@@ -20,11 +20,45 @@ MAX_CHAT_DOCUMENT_CONTEXT_CHARS = 20000
 
 
 ALLOWED_UPDATE_FIELDS = {
-    "Tender": {"customer_name", "title", "status", "submission_time", "currency", "notes"},
+    "Tender": {
+        "customer_name",
+        "tender_number",
+        "title",
+        "status",
+        "submission_date",
+        "submission_time",
+        "submission_type",
+        "award_date",
+        "tender_value",
+        "currency",
+        "notes",
+    },
     "TenderItem": {"description", "quantity_required", "unit_price", "status", "specification_summary"},
     "TenderSubItem": {"description", "quantity", "unit_price", "status", "notes"},
     "RFQ": {"supplier_name", "supplier_email", "status", "subject", "notes"},
     "TenderQuestion": {"answer_text", "suggested_answer", "answer_status"},
+}
+
+TENDER_SUBMISSION_TYPES = {"Email", "Portal", "Postal", "Hand delivered"}
+TENDER_FIELD_ALIASES = {
+    "customer": "customer_name",
+    "customer name": "customer_name",
+    "tender number": "tender_number",
+    "reference": "tender_number",
+    "title": "title",
+    "status": "status",
+    "submission date": "submission_date",
+    "deadline date": "submission_date",
+    "deadline": "submission_date",
+    "submission time": "submission_time",
+    "deadline time": "submission_time",
+    "submission type": "submission_type",
+    "submission method": "submission_type",
+    "award date": "award_date",
+    "tender value": "tender_value",
+    "value": "tender_value",
+    "currency": "currency",
+    "notes": "notes",
 }
 
 
@@ -151,6 +185,95 @@ def _heuristic_send_mail_request(normalized: str) -> bool:
             "write email to",
         }
     )
+
+
+def _heuristic_update_tender_request(normalized: str) -> bool:
+    change_requested = any(
+        re.search(rf"\b{verb}\b", normalized)
+        for verb in ("change", "update", "set", "correct", "rename", "amend", "replace")
+    )
+    field_mentioned = any(alias in normalized for alias in TENDER_FIELD_ALIASES)
+    return change_requested and field_mentioned
+
+
+def _tender_update_context(tender: Tender) -> str:
+    values = {
+        field: (
+            value.isoformat()
+            if isinstance(value, date)
+            else str(value)
+            if isinstance(value, Decimal)
+            else value
+        )
+        for field in sorted(ALLOWED_UPDATE_FIELDS["Tender"])
+        if (value := getattr(tender, field, None)) is not None
+    }
+    return json.dumps(values, indent=2)
+
+
+def _propose_tender_field_updates(
+    message: str,
+    tender: Tender,
+    client,
+    model_name: str,
+) -> dict:
+    prompt = render_prompt(
+        "tender_field_update",
+        tender_fields=", ".join(sorted(ALLOWED_UPDATE_FIELDS["Tender"])),
+        tender_context=_tender_update_context(tender),
+        user_message=message,
+    )
+    parsed, raw_response, error = client.generate_json(model_name, prompt)
+    if parsed is None or error is not None:
+        return {
+            "response_type": "answer",
+            "message": "I could not safely identify the tender field changes. Please state the field and new value explicitly.",
+            "intermediate_steps": [f"Tender update parsing failed: {error or raw_response}"],
+            "actions": [],
+        }
+    requested_updates = parsed.get("updates") or {}
+    updates = {
+        str(field): value
+        for field, value in requested_updates.items()
+        if field in ALLOWED_UPDATE_FIELDS["Tender"]
+    }
+    if not updates:
+        return {
+            "response_type": "answer",
+            "message": "I could not find a supported tender field and new value in that request.",
+            "intermediate_steps": [
+                "Asked the chat model to convert the request into structured Tender field updates.",
+                "No permitted Tender fields with new values were returned.",
+            ],
+            "actions": [],
+        }
+    preview_lines = []
+    for field, new_value in updates.items():
+        current_value = getattr(tender, field, None)
+        if isinstance(current_value, (date, Decimal)):
+            current_value = str(current_value)
+        preview_lines.append(f"- `{field}`: `{current_value if current_value is not None else 'blank'}` → `{new_value if new_value is not None else 'blank'}`")
+    return {
+        "response_type": "proposed_action",
+        "message": (
+            "I’ve prepared these tender updates:\n"
+            + "\n".join(preview_lines)
+            + "\n\nReply with 'confirm' and I will save them."
+        ),
+        "intermediate_steps": [
+            f"Tender update model: {model_name}",
+            "Converted the request into structured updates and removed any non-Tender or protected fields.",
+            f"Prepared {len(updates)} field change(s) for confirmation.",
+        ],
+        "actions": [
+            {
+                "action_type": "update_tender_fields",
+                "tender_id": tender.id,
+                "updates": updates,
+                "requires_confirmation": True,
+            }
+        ],
+    }
 
 
 def _parse_send_mail_request(raw_message: str, tender: Tender | None) -> dict | None:
@@ -539,9 +662,11 @@ def _serialize_tender_context(tender: Tender | None) -> str:
         f"Status: {tender.status}",
         f"Submission Date: {tender.submission_date.isoformat() if tender.submission_date else '-'}",
         f"Submission Time: {tender.submission_time or '-'}",
+        f"Submission Type: {tender.submission_type or '-'}",
         f"Award Date: {tender.award_date.isoformat() if tender.award_date else '-'}",
         f"Currency: {tender.currency}",
         f"Tender Value: {_currency(tender.tender_value, tender.currency)}",
+        f"Notes: {tender.notes or '-'}",
         f"Document Count: {len(tender.documents)}",
         f"Item Count: {len(tender.items)}",
         f"Question Count: {len(tender.questions)}",
@@ -1116,6 +1241,16 @@ def build_chat_response(
             ],
         }
 
+    if intent_hint == "update_tender_fields" or _heuristic_update_tender_request(normalized):
+        if answer_client is None or not answer_model_name:
+            return {
+                "response_type": "answer",
+                "message": "I recognized a tender update request, but the chat model is not available to structure it safely.",
+                "intermediate_steps": ["Detected a Tender field update request without an available chat model."],
+                "actions": [],
+            }
+        return _propose_tender_field_updates(message, tender, answer_client, answer_model_name)
+
     if "status" in normalized:
         return {
             "response_type": "answer",
@@ -1171,6 +1306,75 @@ def build_chat_response(
 
 def apply_confirmed_action(action: ChatAction, data_dir: Path) -> str:
     payload = json.loads(action.payload_json)
+    if action.action_type == "update_tender_fields":
+        tender = Tender.query.get(payload.get("tender_id"))
+        if tender is None:
+            raise ValueError("The target tender could not be found.")
+        requested_updates = payload.get("updates") or {}
+        updates = {
+            field: value
+            for field, value in requested_updates.items()
+            if field in ALLOWED_UPDATE_FIELDS["Tender"]
+        }
+        if not updates:
+            raise ValueError("No permitted Tender fields were supplied.")
+        changed_fields: list[str] = []
+        for field, raw_value in updates.items():
+            if field in {"submission_date", "award_date"}:
+                if raw_value is None or raw_value == "":
+                    value = None
+                else:
+                    try:
+                        value = datetime.strptime(str(raw_value).strip(), "%Y-%m-%d").date()
+                    except ValueError as exc:
+                        raise ValueError(f"{field} must use YYYY-MM-DD format.") from exc
+            elif field == "tender_value":
+                try:
+                    value = Decimal(str(raw_value).replace(",", "").strip())
+                except Exception as exc:
+                    raise ValueError("tender_value must be a valid number.") from exc
+            elif field == "submission_type":
+                submitted_value = str(raw_value or "").strip()
+                value = next(
+                    (option for option in TENDER_SUBMISSION_TYPES if option.lower() == submitted_value.lower()),
+                    None,
+                )
+                if value is None:
+                    raise ValueError("submission_type must be Email, Portal, Postal, or Hand delivered.")
+            elif field in {"customer_name", "tender_number"}:
+                value = str(raw_value or "").strip()
+                if not value:
+                    raise ValueError(f"{field} cannot be blank.")
+                value = value[:255]
+            elif field == "currency":
+                value = str(raw_value or "").strip().upper()
+                if not value:
+                    raise ValueError("currency cannot be blank.")
+                value = value[:10]
+            elif field in {"title", "submission_time", "notes"}:
+                value = str(raw_value).strip() if raw_value is not None else None
+                value = value or None
+                if value is not None and field in {"title", "submission_time"}:
+                    value = value[:255 if field == "title" else 50]
+            else:
+                value = str(raw_value or "").strip()
+                if not value:
+                    raise ValueError(f"{field} cannot be blank.")
+                value = value[:100]
+            if getattr(tender, field) != value:
+                setattr(tender, field, value)
+                changed_fields.append(field)
+        action.status = "applied"
+        action.result_json = json.dumps(
+            {
+                "tender_id": tender.id,
+                "redirect_path": f"/tenders/{tender.id}?refreshed={int(datetime.utcnow().timestamp())}#top",
+                "fields_updated": changed_fields,
+            }
+        )
+        if not changed_fields:
+            return f"No Tender fields changed for {tender.tender_number}; the requested values were already set."
+        return f"Updated {', '.join(changed_fields)} for tender {tender.tender_number}."
     if action.action_type == "create_tender_from_uploads":
         upload_ids = payload.get("chat_upload_ids") or []
         uploads = [upload for upload in (ChatUpload.query.get(upload_id) for upload_id in upload_ids) if upload is not None]
@@ -1408,6 +1612,11 @@ def classify_message_intent(client, model_name: str, message: str, has_upload: b
             "Matched the message against the local question-answering fallback rules.",
             "A tender context is active and the message asks to fill question answers from document content.",
         ]
+    if has_tender_context and _heuristic_update_tender_request(normalized):
+        return "update_tender_fields", [
+            "Matched the message against the local Tender field-update rules.",
+            "A tender context is active and the request names a field and a change operation.",
+        ]
     prompt = render_prompt(
         "chat_action_orchestrator",
         user_message=message,
@@ -1435,6 +1644,8 @@ def classify_message_intent(client, model_name: str, message: str, has_upload: b
     if intent == "add_items_from_message" and has_tender_context and confidence in {"high", "medium"}:
         return intent, steps
     if intent == "answer_questions_from_documents" and has_tender_context and confidence in {"high", "medium"}:
+        return intent, steps
+    if intent == "update_tender_fields" and has_tender_context and confidence in {"high", "medium"}:
         return intent, steps
     if intent == "confirm_action" and confidence in {"high", "medium"}:
         return intent, steps

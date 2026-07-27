@@ -41,7 +41,17 @@
     </div>
     <div class="col-md-3">
       <label class="form-label">Submission Time</label>
-      <input class="form-control" name="submission_time" value="{{ tender.submission_time if tender else '' }}">
+      <input class="form-control" name="submission_time" value="{{ form_data.get('submission_time', '') if form_data else (tender.submission_time if tender else '') }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Submission Type</label>
+      {% set selected_submission_type = form_data.get('submission_type', '') if form_data else (tender.submission_type if tender else '') %}
+      <select class="form-select" name="submission_type" required>
+        <option value="" disabled {% if not selected_submission_type %}selected{% endif %}>Choose submission type</option>
+        {% for submission_type_option in submission_type_options %}
+        <option value="{{ submission_type_option }}" {% if submission_type_option == selected_submission_type %}selected{% endif %}>{{ submission_type_option }}</option>
+        {% endfor %}
+      </select>
     </div>
     <div class="col-md-3">
       <label class="form-label">Award Date</label>

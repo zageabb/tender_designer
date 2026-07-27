@@ -26,6 +26,7 @@ class Tender(TimestampMixin, db.Model):
     status = db.Column(db.String(100), default="New", nullable=False)
     submission_date = db.Column(db.Date)
     submission_time = db.Column(db.String(50))
+    submission_type = db.Column(db.String(50))
     award_date = db.Column(db.Date)
     tender_value = db.Column(db.Numeric(12, 2), default=Decimal("0.00"), nullable=False)
     currency = db.Column(db.String(10), default="GBP", nullable=False)

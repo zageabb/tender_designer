@@ -13,7 +13,6 @@ from services.mailbox_service import (
     create_tender_from_mailbox_message,
     delete_mailbox_message,
     import_mailbox_message_to_tender,
-    link_mailbox_message_to_tender,
     list_mailbox_folders,
     mailbox_is_configured,
     mailbox_message_conversation_key,
@@ -269,9 +268,9 @@ def link_to_tender(message_id: int):
         return redirect(url_for("mailbox.view_message", message_id=mailbox_message.id, folder=selected_folder))
     tender = Tender.query.get_or_404(tender_id)
     try:
-        link_mailbox_message_to_tender(mailbox_message, tender, notes="Linked from mailbox.")
+        import_mailbox_message_to_tender(current_app.config["DATA_DIR"], mailbox_message, tender)
         _commit_with_retry()
-        flash(f"Linked mailbox email to tender {tender.tender_number}.", "success")
+        flash(f"Linked and saved mailbox email to tender {tender.tender_number}.", "success")
         return redirect(url_for("tenders.detail_tender", tender_id=tender.id, _anchor="mailbox"))
     except Exception as exc:
         db.session.rollback()
