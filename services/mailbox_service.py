@@ -136,6 +136,11 @@ def _decode_folder_name(raw_folder: bytes | str) -> str:
     return raw_folder
 
 
+def _imap_mailbox_argument(folder: str) -> str:
+    escaped = (folder or "").replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
 def _parse_folder_line(raw_line: bytes | str) -> str:
     line = _decode_folder_name(raw_line).strip()
     if ' "/" ' in line:
@@ -308,7 +313,7 @@ def _candidate_message_locations(mailbox: imaplib.IMAP4_SSL, provider_message_id
         return [(preferred_folder, fallback_uid)]
 
     for folder in search_folders:
-        status, _ = mailbox.select(folder)
+        status, _ = mailbox.select(_imap_mailbox_argument(folder))
         if status != "OK":
             continue
         status, data = mailbox.uid("search", None, "HEADER", "Message-ID", f'"{provider_message_id}"')
@@ -338,11 +343,11 @@ def _apply_remote_delete(mailbox: imaplib.IMAP4_SSL, provider_message_id: str, p
         ),
     )
     for folder, uid in ordered_locations:
-        status, _ = mailbox.select(folder)
+        status, _ = mailbox.select(_imap_mailbox_argument(folder))
         if status != "OK":
             continue
         if trash_folder and trash_folder != folder:
-            move_status, _ = mailbox.uid("COPY", uid, trash_folder)
+            move_status, _ = mailbox.uid("COPY", uid, _imap_mailbox_argument(trash_folder))
             if move_status == "OK":
                 mailbox.uid("STORE", uid, "+FLAGS", r"(\Deleted)")
                 mailbox.expunge()
@@ -359,7 +364,7 @@ def _apply_remote_seen(mailbox: imaplib.IMAP4_SSL, provider_message_id: str, pre
     if not locations:
         return "message not found remotely"
     for folder, uid in locations:
-        status, _ = mailbox.select(folder)
+        status, _ = mailbox.select(_imap_mailbox_argument(folder))
         if status != "OK":
             continue
         store_status, _ = mailbox.uid("STORE", uid, "+FLAGS", r"(\Seen)")
@@ -375,14 +380,14 @@ def _apply_remote_archive(mailbox: imaplib.IMAP4_SSL, provider_message_id: str, 
     if not locations:
         return "message not found remotely", archive_folder
     for folder, uid in locations:
-        status, _ = mailbox.select(folder)
+        status, _ = mailbox.select(_imap_mailbox_argument(folder))
         if status != "OK":
             continue
         gmail_status, _ = mailbox.uid("STORE", uid, "-X-GM-LABELS", r"(\Inbox)")
         if gmail_status == "OK":
             return "archived on mailbox", archive_folder or folder
         if archive_folder and archive_folder != folder:
-            copy_status, _ = mailbox.uid("COPY", uid, archive_folder)
+            copy_status, _ = mailbox.uid("COPY", uid, _imap_mailbox_argument(archive_folder))
             if copy_status == "OK":
                 mailbox.uid("STORE", uid, "+FLAGS", r"(\Deleted)")
                 mailbox.expunge()
@@ -462,7 +467,7 @@ def sync_mailbox_folder(data_dir: Path, folder: str) -> dict[str, int]:
         deletion_result = {"processed": 0, "failed": 1, "error": str(exc)}
     mailbox = _connect_mailbox()
     try:
-        status, _ = mailbox.select(folder, readonly=True)
+        status, _ = mailbox.select(_imap_mailbox_argument(folder), readonly=True)
         if status != "OK":
             raise ValueError(f"Could not open mailbox folder {folder}.")
         status, data = mailbox.uid("search", None, "ALL")

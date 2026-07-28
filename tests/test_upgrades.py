@@ -200,8 +200,10 @@ class UpgradeTestCase(unittest.TestCase):
         class FakeMailbox:
             def __init__(self):
                 self.uid_calls = []
+                self.selected_folders = []
 
             def select(self, folder):
+                self.selected_folders.append(folder)
                 return "OK", []
 
             def uid(self, *args):
@@ -224,6 +226,12 @@ class UpgradeTestCase(unittest.TestCase):
         self.assertEqual(result, "archived on mailbox")
         self.assertEqual(folder, "[Gmail]/All Mail")
         self.assertIn(("STORE", "7", "-X-GM-LABELS", r"(\Inbox)"), mailbox.uid_calls)
+        self.assertEqual(mailbox_service._imap_mailbox_argument("INBOX"), '"INBOX"')
+        self.assertEqual(
+            mailbox_service._imap_mailbox_argument("[Gmail]/All Mail"),
+            '"[Gmail]/All Mail"',
+        )
+        self.assertIn('"INBOX"', mailbox.selected_folders)
 
     def test_tender_monitor_queues_scan_when_worker_starts(self) -> None:
         class FakeThread:
