@@ -79,7 +79,7 @@ def _item_redirect(item_id: int, anchor: str | None = None):
 
 @tenders_bp.route("/")
 def list_tenders():
-    today = date(2026, 7, 23)
+    today = date.today()
     tenders = (
         Tender.query.order_by(
             Tender.submission_date.is_(None),
@@ -141,7 +141,7 @@ def create_tender():
 
 @tenders_bp.route("/<int:tender_id>")
 def detail_tender(tender_id: int):
-    today = date(2026, 7, 23)
+    today = date.today()
     tender = Tender.query.get_or_404(tender_id)
     extraction_runs = LLMRunLog.query.filter_by(tender_id=tender.id).order_by(LLMRunLog.created_at.desc()).limit(6).all()
     extraction_jobs = (
