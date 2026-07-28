@@ -9,6 +9,7 @@ import unittest
 import zipfile
 from datetime import datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 
@@ -30,7 +31,7 @@ from services.agentic_web_search import (  # noqa: E402
     _validate_citations,
 )
 from services.managed_paths import ManagedPathError, resolve_managed_path  # noqa: E402
-from services import mailbox_jobs, tender_monitor  # noqa: E402
+from services import mailbox_jobs, mailbox_service, tender_monitor  # noqa: E402
 from services.upload_ingestion import expand_upload_entries  # noqa: E402
 from services.worker_lease import PROCESS_OWNER_ID, acquire_worker_lease  # noqa: E402
 from werkzeug.datastructures import FileStorage  # noqa: E402
@@ -154,6 +155,75 @@ class UpgradeTestCase(unittest.TestCase):
         finally:
             mailbox_jobs._worker_thread = original_thread
             mailbox_jobs._worker_started = original_started
+
+    def test_mailbox_archive_requires_remote_confirmation(self) -> None:
+        message = SimpleNamespace(
+            mailbox_folder="INBOX",
+            provider_message_id="<message@example.com>",
+            is_read=False,
+        )
+        with patch("services.mailbox_service.mailbox_is_configured", return_value=True), patch(
+            "services.mailbox_service.list_mailbox_folders",
+            return_value=["INBOX", "[Gmail]/All Mail"],
+        ), patch("services.mailbox_service._connect_mailbox", return_value=object()), patch(
+            "services.mailbox_service._close_mailbox",
+        ), patch(
+            "services.mailbox_service._apply_remote_archive",
+            return_value=("remote archive could not be completed", "[Gmail]/All Mail"),
+        ):
+            with self.assertRaises(RuntimeError):
+                mailbox_service.archive_mailbox_message(message)
+        self.assertEqual(message.mailbox_folder, "INBOX")
+        self.assertFalse(message.is_read)
+
+    def test_mailbox_archive_updates_local_state_after_remote_success(self) -> None:
+        message = SimpleNamespace(
+            mailbox_folder="INBOX",
+            provider_message_id="<message@example.com>",
+            is_read=False,
+        )
+        with patch("services.mailbox_service.mailbox_is_configured", return_value=True), patch(
+            "services.mailbox_service.list_mailbox_folders",
+            return_value=["INBOX", "[Gmail]/All Mail"],
+        ), patch("services.mailbox_service._connect_mailbox", return_value=object()), patch(
+            "services.mailbox_service._close_mailbox",
+        ), patch(
+            "services.mailbox_service._apply_remote_archive",
+            return_value=("archived on mailbox", "[Gmail]/All Mail"),
+        ):
+            result = mailbox_service.archive_mailbox_message(message)
+        self.assertEqual(result, "archived on mailbox")
+        self.assertEqual(message.mailbox_folder, "[Gmail]/All Mail")
+        self.assertTrue(message.is_read)
+
+    def test_gmail_archive_removes_the_inbox_label_as_a_list(self) -> None:
+        class FakeMailbox:
+            def __init__(self):
+                self.uid_calls = []
+
+            def select(self, folder):
+                return "OK", []
+
+            def uid(self, *args):
+                self.uid_calls.append(args)
+                return "OK", []
+
+        mailbox = FakeMailbox()
+        with patch(
+            "services.mailbox_service.list_mailbox_folders",
+            return_value=["INBOX", "[Gmail]/All Mail"],
+        ), patch(
+            "services.mailbox_service._candidate_message_locations",
+            return_value=[("INBOX", "7")],
+        ):
+            result, folder = mailbox_service._apply_remote_archive(
+                mailbox,
+                "<message@example.com>",
+                preferred_folder="INBOX",
+            )
+        self.assertEqual(result, "archived on mailbox")
+        self.assertEqual(folder, "[Gmail]/All Mail")
+        self.assertIn(("STORE", "7", "-X-GM-LABELS", r"(\Inbox)"), mailbox.uid_calls)
 
     def test_tender_monitor_queues_scan_when_worker_starts(self) -> None:
         class FakeThread:

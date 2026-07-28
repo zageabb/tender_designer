@@ -378,7 +378,7 @@ def _apply_remote_archive(mailbox: imaplib.IMAP4_SSL, provider_message_id: str, 
         status, _ = mailbox.select(folder)
         if status != "OK":
             continue
-        gmail_status, _ = mailbox.uid("STORE", uid, "-X-GM-LABELS", "\\Inbox")
+        gmail_status, _ = mailbox.uid("STORE", uid, "-X-GM-LABELS", r"(\Inbox)")
         if gmail_status == "OK":
             return "archived on mailbox", archive_folder or folder
         if archive_folder and archive_folder != folder:
@@ -555,7 +555,7 @@ def archive_mailbox_message(mailbox_message: MailboxMessage) -> str:
         raise ValueError("Mailbox settings are incomplete. Add the Gmail username and app password in Settings first.")
     folder = mailbox_message.mailbox_folder or (get_setting("mail_inbox_folder", "INBOX") or "INBOX")
     message_id = mailbox_message.provider_message_id or ""
-    remote_status = "archived locally"
+    remote_status = "remote archive could not be completed"
     archive_folder = _all_mail_folder_name(list_mailbox_folders()) or "Archived"
     mailbox = None
     try:
@@ -563,11 +563,12 @@ def archive_mailbox_message(mailbox_message: MailboxMessage) -> str:
         if message_id:
             remote_status, remote_folder = _apply_remote_archive(mailbox, message_id, preferred_folder=folder)
             archive_folder = remote_folder or archive_folder
-    except Exception as exc:
-        remote_status = f"archived locally ({exc})"
     finally:
         if mailbox is not None:
             _close_mailbox(mailbox)
+    archive_confirmed = remote_status == "archived on mailbox" or remote_status.startswith("moved to ")
+    if not archive_confirmed:
+        raise RuntimeError(remote_status)
     mailbox_message.mailbox_folder = archive_folder or "Archived"
     mailbox_message.is_read = True
     return remote_status
