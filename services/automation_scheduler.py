@@ -5,7 +5,7 @@ from datetime import datetime, time, timedelta
 
 from flask import Flask
 
-from services.mailbox_jobs import queue_mailbox_sync_job
+from services.mailbox_jobs import ensure_mailbox_sync_worker, queue_mailbox_sync_job
 from services.settings_service import get_setting
 from services.tender_monitor import request_tender_monitor_scan
 from services.worker_lease import acquire_worker_lease
@@ -61,6 +61,7 @@ def _worker_loop(app: Flask) -> None:
                 request_tender_monitor_scan()
                 next_monitor_run = _next_monitor_run(now + timedelta(seconds=1))
             if _auto_mail_sync_enabled() and now >= next_mail_sync_run:
+                ensure_mailbox_sync_worker(app)
                 queue_mailbox_sync_job(source_label="Scheduled mailbox sync")
                 next_mail_sync_run = _next_mail_sync_run(now + timedelta(seconds=1))
             sleep_until = min(next_monitor_run, next_mail_sync_run if _auto_mail_sync_enabled() else next_monitor_run)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import os
 import re
+import socket
 import tempfile
 import unittest
 import zipfile
@@ -29,7 +30,7 @@ from services.agentic_web_search import (  # noqa: E402
     _validate_citations,
 )
 from services.managed_paths import ManagedPathError, resolve_managed_path  # noqa: E402
-from services import tender_monitor  # noqa: E402
+from services import mailbox_jobs, tender_monitor  # noqa: E402
 from services.upload_ingestion import expand_upload_entries  # noqa: E402
 from services.worker_lease import PROCESS_OWNER_ID, acquire_worker_lease  # noqa: E402
 from werkzeug.datastructures import FileStorage  # noqa: E402
@@ -111,6 +112,48 @@ class UpgradeTestCase(unittest.TestCase):
             lease.owner_id = PROCESS_OWNER_ID
             db.session.commit()
         self.assertTrue(acquire_worker_lease(self.app, "test-worker"))
+
+    def test_worker_lease_reclaims_dead_local_process(self) -> None:
+        with self.app.app_context():
+            db.session.add(
+                WorkerLease(
+                    name="dead-local-worker",
+                    owner_id=f"{socket.gethostname()}:12345:old-process",
+                    expires_at=datetime.utcnow() + timedelta(minutes=2),
+                )
+            )
+            db.session.commit()
+        with patch("services.worker_lease.os.kill", side_effect=ProcessLookupError):
+            self.assertTrue(acquire_worker_lease(self.app, "dead-local-worker"))
+        with self.app.app_context():
+            lease = db.session.get(WorkerLease, "dead-local-worker")
+            self.assertEqual(lease.owner_id, PROCESS_OWNER_ID)
+
+    def test_mailbox_worker_recovers_from_dead_thread(self) -> None:
+        class FakeThread:
+            def __init__(self, *args, alive=False, **kwargs):
+                self.alive = alive
+
+            def start(self):
+                self.alive = True
+
+            def is_alive(self):
+                return self.alive
+
+        original_thread = mailbox_jobs._worker_thread
+        original_started = mailbox_jobs._worker_started
+        mailbox_jobs._worker_thread = FakeThread(alive=False)
+        mailbox_jobs._worker_started = True
+        try:
+            with patch("services.mailbox_jobs.acquire_worker_lease", return_value=True), patch(
+                "services.mailbox_jobs.threading.Thread",
+                FakeThread,
+            ):
+                self.assertTrue(mailbox_jobs.ensure_mailbox_sync_worker(self.app))
+            self.assertTrue(mailbox_jobs._worker_thread.is_alive())
+        finally:
+            mailbox_jobs._worker_thread = original_thread
+            mailbox_jobs._worker_started = original_started
 
     def test_tender_monitor_queues_scan_when_worker_starts(self) -> None:
         class FakeThread:

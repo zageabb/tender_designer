@@ -94,23 +94,31 @@ def _worker_loop(app: Flask) -> None:
             _job_queue.task_done()
 
 
-def start_mailbox_sync_worker(app: Flask) -> None:
+def ensure_mailbox_sync_worker(app: Flask) -> bool:
     global _worker_started, _worker_thread
+    started_now = False
     with _worker_lock:
-        if _worker_started:
-            return
+        if _worker_thread and _worker_thread.is_alive():
+            return False
         if not acquire_worker_lease(app, "mailbox-sync-worker"):
-            return
+            return False
         worker = threading.Thread(target=_worker_loop, args=(app,), name="mailbox-sync-worker", daemon=True)
         worker.start()
         _worker_thread = worker
         _worker_started = True
+        started_now = True
 
-    with app.app_context():
-        queued_jobs = (
-            MailboxSyncJob.query.filter(MailboxSyncJob.status.in_(["queued", "running"]))
-            .order_by(MailboxSyncJob.created_at.asc())
-            .all()
-        )
-    for job in queued_jobs:
-        enqueue_mailbox_sync_job(job.id)
+    if started_now:
+        with app.app_context():
+            queued_jobs = (
+                MailboxSyncJob.query.filter(MailboxSyncJob.status.in_(["queued", "running"]))
+                .order_by(MailboxSyncJob.created_at.asc())
+                .all()
+            )
+        for job in queued_jobs:
+            enqueue_mailbox_sync_job(job.id)
+    return started_now
+
+
+def start_mailbox_sync_worker(app: Flask) -> None:
+    ensure_mailbox_sync_worker(app)

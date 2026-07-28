@@ -20,6 +20,23 @@ _heartbeat_names: set[str] = set()
 _heartbeat_lock = threading.Lock()
 
 
+def _owner_process_is_alive(owner_id: str) -> bool | None:
+    try:
+        hostname, pid_text, _ = owner_id.split(":", 2)
+        pid = int(pid_text)
+    except (AttributeError, ValueError):
+        return None
+    if hostname != socket.gethostname():
+        return None
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
 def acquire_worker_lease(app: Flask, name: str) -> bool:
     now = datetime.utcnow()
     expires_at = now + timedelta(seconds=LEASE_SECONDS)
@@ -32,7 +49,11 @@ def acquire_worker_lease(app: Flask, name: str) -> bool:
             except IntegrityError:
                 db.session.rollback()
                 return False
-        elif lease.owner_id == PROCESS_OWNER_ID or lease.expires_at <= now:
+        elif (
+            lease.owner_id == PROCESS_OWNER_ID
+            or lease.expires_at <= now
+            or _owner_process_is_alive(lease.owner_id) is False
+        ):
             lease.owner_id = PROCESS_OWNER_ID
             lease.expires_at = expires_at
             lease.updated_at = now
