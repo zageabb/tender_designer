@@ -185,3 +185,7 @@ def start_tender_monitor_worker(app: Flask) -> None:
         worker.start()
         _monitor_thread = worker
         _monitor_started = True
+        # Do not wait for the next configured clock time. The application may
+        # routinely start after that time (or the host may be asleep then), so
+        # queue a catch-up scan whenever the monitor worker starts.
+        request_tender_monitor_scan()

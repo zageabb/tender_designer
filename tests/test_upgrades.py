@@ -29,6 +29,7 @@ from services.agentic_web_search import (  # noqa: E402
     _validate_citations,
 )
 from services.managed_paths import ManagedPathError, resolve_managed_path  # noqa: E402
+from services import tender_monitor  # noqa: E402
 from services.upload_ingestion import expand_upload_entries  # noqa: E402
 from services.worker_lease import PROCESS_OWNER_ID, acquire_worker_lease  # noqa: E402
 from werkzeug.datastructures import FileStorage  # noqa: E402
@@ -110,6 +111,35 @@ class UpgradeTestCase(unittest.TestCase):
             lease.owner_id = PROCESS_OWNER_ID
             db.session.commit()
         self.assertTrue(acquire_worker_lease(self.app, "test-worker"))
+
+    def test_tender_monitor_queues_scan_when_worker_starts(self) -> None:
+        class FakeThread:
+            def __init__(self, *args, **kwargs):
+                self.started = False
+
+            def start(self):
+                self.started = True
+
+            def is_alive(self):
+                return self.started
+
+        original_thread = tender_monitor._monitor_thread
+        original_started = tender_monitor._monitor_started
+        tender_monitor._monitor_thread = None
+        tender_monitor._monitor_started = False
+        tender_monitor._monitor_scan_event.clear()
+        try:
+            with patch("services.tender_monitor.acquire_worker_lease", return_value=True), patch(
+                "services.tender_monitor.threading.Thread",
+                FakeThread,
+            ):
+                tender_monitor.start_tender_monitor_worker(self.app)
+            self.assertTrue(tender_monitor._monitor_started)
+            self.assertTrue(tender_monitor._monitor_scan_event.is_set())
+        finally:
+            tender_monitor._monitor_scan_event.clear()
+            tender_monitor._monitor_thread = original_thread
+            tender_monitor._monitor_started = original_started
 
     def test_redirect_is_validated_before_next_connection(self) -> None:
         class RedirectResponse:
