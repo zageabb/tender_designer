@@ -4,6 +4,7 @@ const computerFinderConversation = document.getElementById("computer-finder-conv
 const computerFinderBaseSpec = document.getElementById("computer-finder-base-spec");
 const computerFinderInstruction = document.getElementById("computer-finder-instruction");
 const computerFinderSettingsForm = document.getElementById("computer-finder-settings-form");
+const computerFinderPromptsForm = document.getElementById("computer-finder-prompts-form");
 const computerFinderSaveActions = document.getElementById("computer-finder-save-actions");
 const computerFinderSaveStatus = document.getElementById("computer-finder-save-status");
 let computerFinderHistory = [];
@@ -217,6 +218,32 @@ computerFinderSettingsForm?.addEventListener("submit", async (event) => {
     document.getElementById("computer-finder-domain-summary").textContent = `Saved. Active: ${result.allowed_domains.length} allowed, ${result.blocked_domains.length} blocked.`;
   } catch (error) {
     document.getElementById("computer-finder-domain-summary").textContent = error.message;
+  } finally {
+    submitButton.disabled = false;
+  }
+});
+
+computerFinderPromptsForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const submitButton = document.getElementById("computer-finder-prompts-submit");
+  const status = document.getElementById("computer-finder-prompts-status");
+  const prompts = Object.fromEntries(new FormData(computerFinderPromptsForm).entries());
+  submitButton.disabled = true;
+  status.className = "small text-muted ms-2";
+  status.textContent = "Saving...";
+  try {
+    const response = await fetch(computerFinderPromptsForm.dataset.promptsUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompts }),
+    });
+    const result = await computerFinderJsonResponse(response);
+    if (!response.ok || !result.ok) throw new Error(result.message || "Could not save Finder instructions.");
+    status.className = "small text-success ms-2";
+    status.textContent = result.message;
+  } catch (error) {
+    status.className = "small text-danger ms-2";
+    status.textContent = error.message;
   } finally {
     submitButton.disabled = false;
   }

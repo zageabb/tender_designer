@@ -14,6 +14,7 @@ from services.computer_finder_service import (
     parse_domain_list,
 )
 from services.file_storage import save_tender_bytes
+from services.prompt_service import PROMPT_FILES, ensure_prompt_files, get_prompt_content, save_prompt_content
 from services.settings_service import DEFAULT_SETTINGS, ensure_default_settings, get_setting
 
 
@@ -34,10 +35,16 @@ COMPUTER_FINDER_SETTING_KEYS = [
     "computer_finder_market_city",
 ]
 
+COMPUTER_FINDER_PROMPT_KEYS = [
+    "computer_finder_query_planning",
+    "computer_finder_search",
+]
+
 
 @computer_finder_bp.route("/", methods=["GET"])
 def index():
     ensure_default_settings(db)
+    ensure_prompt_files()
     tender = Tender.query.get(request.args.get("tender_id", type=int)) if request.args.get("tender_id") else None
     selected_items, selected_sub_items = _selected_tender_lines(tender)
     selected_spec = _selection_spec(tender, selected_items, selected_sub_items)
@@ -46,6 +53,15 @@ def index():
         finder_settings=_current_settings(),
         allowed_domains=parse_domain_list(get_setting("computer_finder_allowed_domains")),
         blocked_domains=parse_domain_list(get_setting("computer_finder_blocked_domains")),
+        finder_prompts=[
+            {
+                "key": key,
+                "title": PROMPT_FILES[key]["title"],
+                "description": PROMPT_FILES[key]["description"],
+                "content": get_prompt_content(key),
+            }
+            for key in COMPUTER_FINDER_PROMPT_KEYS
+        ],
         tenders=Tender.query.order_by(Tender.updated_at.desc()).limit(200).all(),
         tender=tender,
         selected_items=selected_items,
@@ -284,6 +300,22 @@ def update_settings():
             "blocked_domains": parse_domain_list(get_setting("computer_finder_blocked_domains")),
         }
     )
+
+
+@computer_finder_bp.route("/prompts", methods=["POST"])
+def update_prompts():
+    payload = request.get_json(force=True)
+    prompts = payload.get("prompts")
+    if not isinstance(prompts, dict):
+        return jsonify({"ok": False, "message": "No Finder instructions were supplied."}), 400
+
+    missing_keys = [key for key in COMPUTER_FINDER_PROMPT_KEYS if not str(prompts.get(key) or "").strip()]
+    if missing_keys:
+        return jsonify({"ok": False, "message": "Both Finder instruction fields are required."}), 400
+
+    for key in COMPUTER_FINDER_PROMPT_KEYS:
+        save_prompt_content(key, str(prompts[key]))
+    return jsonify({"ok": True, "message": "Computer Finder instructions saved."})
 
 
 def _current_settings() -> dict:

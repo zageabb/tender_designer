@@ -151,6 +151,29 @@
       <button class="btn btn-outline-primary mt-3" id="computer-finder-settings-submit" type="submit">Save Search Settings</button>
       <span class="small text-muted ms-2" id="computer-finder-domain-summary">Active: {{ allowed_domains|length }} allowed, {{ blocked_domains|length }} blocked.</span>
     </form>
+
+    <hr class="my-4">
+    <form id="computer-finder-prompts-form" data-prompts-url="{{ url_for('computer_finder.update_prompts') }}">
+      <div class="mb-3">
+        <h2 class="h5 mb-1">Finder instructions</h2>
+        <p class="text-muted mb-0">These are the live instructions used to plan web searches and turn the evidence into recommendations. Template fields such as <code>{% raw %}{{computer_spec}}{% endraw %}</code> are filled automatically.</p>
+      </div>
+      {% for prompt in finder_prompts %}
+      <div class="mb-3">
+        <label class="form-label fw-semibold" for="computer-finder-prompt-{{ prompt.key }}">{{ prompt.title }}</label>
+        <div class="form-text mb-2">{{ prompt.description }}</div>
+        <textarea
+          class="form-control font-monospace"
+          id="computer-finder-prompt-{{ prompt.key }}"
+          name="{{ prompt.key }}"
+          rows="14"
+          spellcheck="false"
+        >{{ prompt.content }}</textarea>
+      </div>
+      {% endfor %}
+      <button class="btn btn-outline-primary" id="computer-finder-prompts-submit" type="submit">Save Finder Instructions</button>
+      <span class="small text-muted ms-2" id="computer-finder-prompts-status"></span>
+    </form>
   </div>
 </details>
 {% endblock %}

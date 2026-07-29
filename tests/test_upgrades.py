@@ -10,7 +10,7 @@ import zipfile
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 
 os.environ["TENDER_DESIGNER_MIGRATION_MODE"] = "1"
@@ -180,6 +180,35 @@ class UpgradeTestCase(unittest.TestCase):
         self.assertIn("25 business laptops", search_spec)
         self.assertIn("HP ProBook 440", search_spec)
         self.assertIn("under £900", search_spec)
+
+    def test_computer_finder_exposes_and_updates_its_instructions(self) -> None:
+        self._login()
+        finder = self.client.get("/computer-finder/")
+        body = finder.get_data(as_text=True)
+        self.assertEqual(finder.status_code, 200)
+        self.assertIn("Computer Finder Query Planning", body)
+        self.assertIn("Computer Finder Recommendation", body)
+        self.assertIn("Save Finder Instructions", body)
+
+        token = self._csrf_token("/computer-finder/")
+        prompts = {
+            "computer_finder_query_planning": "Plan searches using {{computer_spec}}",
+            "computer_finder_search": "Recommend products using {{search_results}}",
+        }
+        with patch("routes.computer_finder.save_prompt_content") as save_prompt:
+            response = self.client.post(
+                "/computer-finder/prompts",
+                json={"prompts": prompts},
+                headers={"X-CSRFToken": token},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            save_prompt.call_args_list,
+            [
+                call("computer_finder_query_planning", prompts["computer_finder_query_planning"]),
+                call("computer_finder_search", prompts["computer_finder_search"]),
+            ],
+        )
 
     def test_csrf_rejects_unprotected_mutation(self) -> None:
         self._login()
