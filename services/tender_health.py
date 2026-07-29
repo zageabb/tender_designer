@@ -19,7 +19,7 @@ ACTIVE_STATUSES = {
 }
 
 COMPLETE_STATUSES = {"Submitted", "Awarded"}
-INACTIVE_STATUSES = {"Lost", "Cancelled"}
+INACTIVE_STATUSES = {"Lost", "No Bid", "Cancelled"}
 EARLY_STAGE_STATUSES = {"New", "Documents Uploaded", "Metadata Extracted", "Items Extracted"}
 
 SEVERITY_ORDER = {

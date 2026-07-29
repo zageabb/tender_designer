@@ -27,12 +27,12 @@ OUTSTANDING_TENDER_STATUS_ORDER = {
 @dashboard_bp.route("/")
 def index():
     today = date.today()
-    active_tenders = Tender.query.filter(Tender.status.notin_(["Awarded", "Lost", "Cancelled"])).count()
+    active_tenders = Tender.query.filter(Tender.status.notin_(["Awarded", "No Bid", "Lost", "Cancelled"])).count()
     tenders_awaiting_review = Tender.query.filter(Tender.status.in_(["Metadata Extracted", "Items Extracted", "Ready For Review"])).count()
     rfqs_waiting = RFQ.query.filter(RFQ.status.in_(["Draft", "Downloaded", "Sent Manually"])).count()
     unanswered_questions = TenderQuestion.query.filter(TenderQuestion.answer_status != "Answered").count()
     outstanding_tenders = (
-        Tender.query.filter(Tender.status.notin_(["Awarded", "Lost", "Cancelled"]))
+        Tender.query.filter(Tender.status.notin_(["Awarded", "No Bid", "Lost", "Cancelled"]))
         .all()
     )
     outstanding_tenders = sorted(

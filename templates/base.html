@@ -49,7 +49,7 @@
         <main>
           {% block content %}{% endblock %}
         </main>
-        {% if current_user.is_authenticated %}{% include "partials/chat_panel.html" %}{% endif %}
+        {% if current_user.is_authenticated and (chat_context or {}).get("page") not in ["computer_finder", "computer_finder_selection"] %}{% include "partials/chat_panel.html" %}{% endif %}
       </div>
     </div>
 

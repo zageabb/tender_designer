@@ -590,6 +590,69 @@ body {
   min-height: 12rem;
 }
 
+.computer-finder-workspace {
+  overflow: hidden;
+}
+
+.computer-finder-conversation {
+  min-height: 24rem;
+  max-height: 68vh;
+  overflow-y: auto;
+  padding: 1.25rem;
+  background: linear-gradient(180deg, rgba(239, 246, 248, 0.72), rgba(255, 255, 255, 0.86));
+}
+
+.finder-message {
+  width: min(88%, 980px);
+  padding: 1rem 1.1rem;
+  margin-bottom: 1rem;
+  border-radius: 1.15rem;
+  box-shadow: 0 8px 24px rgba(17, 58, 82, 0.07);
+}
+
+.finder-message-assistant {
+  margin-right: auto;
+  background: #fff;
+  border: 1px solid rgba(17, 58, 82, 0.1);
+}
+
+.finder-message-user {
+  margin-left: auto;
+  background: linear-gradient(135deg, #113a52, #1f6678);
+  color: #fff;
+}
+
+.finder-message-user .markdown-rendered {
+  color: inherit;
+}
+
+.finder-message-label {
+  margin-bottom: 0.45rem;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.finder-message-working {
+  animation: finder-pulse 1.4s ease-in-out infinite;
+}
+
+.computer-finder-settings-summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.computer-finder-settings-summary::-webkit-details-marker {
+  display: none;
+}
+
+@keyframes finder-pulse {
+  0%, 100% { opacity: 0.62; }
+  50% { opacity: 1; }
+}
+
 .computer-finder-sources ol {
   margin-bottom: 0;
   padding-left: 1.3rem;

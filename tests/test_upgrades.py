@@ -20,7 +20,8 @@ os.environ["SECRET_KEY"] = "test-secret"
 
 from app import create_app  # noqa: E402
 from database import db  # noqa: E402
-from models import Tender, WorkerLease  # noqa: E402
+from models import Tender, TenderItem, TenderSubItem, WorkerLease  # noqa: E402
+from routes.computer_finder import _conversation_search_spec  # noqa: E402
 from services.agentic_web_search import (  # noqa: E402
     DDGSSearchProvider,
     Evidence,
@@ -32,6 +33,7 @@ from services.agentic_web_search import (  # noqa: E402
 )
 from services.managed_paths import ManagedPathError, resolve_managed_path  # noqa: E402
 from services import mailbox_jobs, mailbox_service, tender_monitor  # noqa: E402
+from services.tender_health import evaluate_tender_health  # noqa: E402
 from services.upload_ingestion import expand_upload_entries  # noqa: E402
 from services.worker_lease import PROCESS_OWNER_ID, acquire_worker_lease  # noqa: E402
 from werkzeug.datastructures import FileStorage  # noqa: E402
@@ -102,6 +104,12 @@ class UpgradeTestCase(unittest.TestCase):
                         status="Quoted",
                         submission_date=datetime(2026, 8, 5).date(),
                     ),
+                    Tender(
+                        customer_name="Declined Customer",
+                        tender_number="ORDER-NO-BID",
+                        status="No Bid",
+                        submission_date=datetime(2026, 8, 1).date(),
+                    ),
                 ]
             )
             db.session.commit()
@@ -109,6 +117,69 @@ class UpgradeTestCase(unittest.TestCase):
         body = self.client.get("/").get_data(as_text=True)
         self.assertLess(body.index("ORDER-SAME-QUOTED"), body.index("ORDER-EARLIER"))
         self.assertLess(body.index("ORDER-EARLIER"), body.index("ORDER-LATER"))
+        self.assertNotIn("ORDER-NO-BID", body)
+
+    def test_no_bid_is_an_inactive_tender_status(self) -> None:
+        tender = SimpleNamespace(
+            id=1,
+            status="No Bid",
+            submission_date=datetime(2026, 8, 1).date(),
+        )
+        signal = evaluate_tender_health(tender, today=datetime(2026, 7, 29).date())
+        self.assertEqual(signal.key, "inactive")
+        self.assertFalse(signal.active)
+
+    def test_computer_finder_launches_from_selected_tender_items(self) -> None:
+        with self.app.app_context():
+            tender = Tender(
+                customer_name="Finder Customer",
+                tender_number="FINDER-001",
+                status="Items Extracted",
+            )
+            item = TenderItem(
+                tender=tender,
+                description="Business laptops",
+                quantity_required=25,
+                specification_summary="16GB RAM, 512GB SSD, Windows 11 Pro",
+            )
+            sub_item = TenderSubItem(
+                tender_item=item,
+                description="Three-year onsite warranty",
+                quantity=25,
+            )
+            db.session.add(tender)
+            db.session.commit()
+            tender_id = tender.id
+            item_id = item.id
+            sub_item_id = sub_item.id
+        self._login()
+        selection = self.client.get(f"/computer-finder/tender/{tender_id}/select")
+        self.assertEqual(selection.status_code, 200)
+        self.assertIn("Business laptops", selection.get_data(as_text=True))
+        finder = self.client.get(
+            f"/computer-finder/?tender_id={tender_id}&item_ids={item_id}&sub_item_ids={sub_item_id}"
+        )
+        body = finder.get_data(as_text=True)
+        self.assertEqual(finder.status_code, 200)
+        self.assertIn("16GB RAM, 512GB SSD, Windows 11 Pro", body)
+        self.assertIn("Three-year onsite warranty", body)
+        self.assertNotIn('<aside class="chat-panel', body)
+        self.assertIn(f'<option value="{tender_id}" selected>', body)
+
+    def test_computer_finder_follow_up_includes_previous_result(self) -> None:
+        search_spec = _conversation_search_spec(
+            {
+                "base_spec": "25 business laptops with Windows 11 Pro",
+                "instruction": "Keep it under £900 per unit.",
+                "history": [
+                    {"role": "user", "content": "Prefer Lenovo or HP."},
+                    {"role": "assistant", "content": "Previous recommendation: HP ProBook 440."},
+                ],
+            }
+        )
+        self.assertIn("25 business laptops", search_spec)
+        self.assertIn("HP ProBook 440", search_spec)
+        self.assertIn("under £900", search_spec)
 
     def test_csrf_rejects_unprotected_mutation(self) -> None:
         self._login()

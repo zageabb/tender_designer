@@ -7,7 +7,7 @@ from pathlib import Path
 from flask import Blueprint, current_app, jsonify, render_template, request, send_file, url_for
 
 from database import db
-from models import AppSetting, Tender, TenderDocument
+from models import AppSetting, Tender, TenderDocument, TenderItem, TenderSubItem
 from services.computer_finder_service import (
     ComputerFinderConfigError,
     find_computer_for_spec,
@@ -38,20 +38,37 @@ COMPUTER_FINDER_SETTING_KEYS = [
 @computer_finder_bp.route("/", methods=["GET"])
 def index():
     ensure_default_settings(db)
+    tender = Tender.query.get(request.args.get("tender_id", type=int)) if request.args.get("tender_id") else None
+    selected_items, selected_sub_items = _selected_tender_lines(tender)
+    selected_spec = _selection_spec(tender, selected_items, selected_sub_items)
     return render_template(
         "computer_finder/index.html",
         finder_settings=_current_settings(),
         allowed_domains=parse_domain_list(get_setting("computer_finder_allowed_domains")),
         blocked_domains=parse_domain_list(get_setting("computer_finder_blocked_domains")),
         tenders=Tender.query.order_by(Tender.updated_at.desc()).limit(200).all(),
+        tender=tender,
+        selected_items=selected_items,
+        selected_sub_items=selected_sub_items,
+        selected_spec=selected_spec,
         chat_context={"page": "computer_finder"},
+    )
+
+
+@computer_finder_bp.route("/tender/<int:tender_id>/select", methods=["GET"])
+def select_tender_items(tender_id: int):
+    tender = Tender.query.get_or_404(tender_id)
+    return render_template(
+        "computer_finder/select_items.html",
+        tender=tender,
+        chat_context={"page": "computer_finder_selection", "tender_id": tender.id},
     )
 
 
 @computer_finder_bp.route("/search", methods=["POST"])
 def search():
     payload = request.get_json(force=True)
-    computer_spec = (payload.get("spec") or "").strip()
+    computer_spec = _conversation_search_spec(payload)
     try:
         result = find_computer_for_spec(computer_spec)
     except ComputerFinderConfigError as exc:
@@ -66,6 +83,70 @@ def search():
             "steps": result.get("steps", []),
         }
     )
+
+
+def _selected_tender_lines(tender: Tender | None) -> tuple[list[TenderItem], list[TenderSubItem]]:
+    if tender is None:
+        return [], []
+    item_ids = set(request.args.getlist("item_ids", type=int))
+    sub_item_ids = set(request.args.getlist("sub_item_ids", type=int))
+    selected_items = [item for item in tender.items if item.id in item_ids]
+    selected_sub_items = [
+        sub_item
+        for item in tender.items
+        for sub_item in item.sub_items
+        if sub_item.id in sub_item_ids
+    ]
+    return selected_items, selected_sub_items
+
+
+def _selection_spec(
+    tender: Tender | None,
+    selected_items: list[TenderItem],
+    selected_sub_items: list[TenderSubItem],
+) -> str:
+    lines: list[str] = []
+    if tender is not None:
+        lines.extend(
+            [
+                f"Tender: {tender.tender_number} — {tender.customer_name}",
+                "Selected requirements:",
+            ]
+        )
+    for item in selected_items:
+        lines.append(f"- {item.description} | Quantity: {item.quantity_required}")
+        if item.specification_summary:
+            lines.append(f"  Specification: {item.specification_summary}")
+        for specification in item.specifications:
+            lines.append(f"  Requirement: {specification.specification_text}")
+    for sub_item in selected_sub_items:
+        lines.append(
+            f"- {sub_item.tender_item.description} / {sub_item.description} | Quantity: {sub_item.quantity}"
+        )
+        if sub_item.notes:
+            lines.append(f"  Notes: {sub_item.notes}")
+        for specification in sub_item.specifications:
+            lines.append(f"  Requirement: {specification.specification_text}")
+    return "\n".join(lines).strip()
+
+
+def _conversation_search_spec(payload: dict) -> str:
+    base_spec = str(payload.get("base_spec") or payload.get("spec") or "").strip()[:20000]
+    instruction = str(payload.get("instruction") or "").strip()[:5000]
+    history_lines: list[str] = []
+    for entry in (payload.get("history") or [])[-6:]:
+        if not isinstance(entry, dict):
+            continue
+        role = "User" if entry.get("role") == "user" else "Previous recommendation"
+        content = str(entry.get("content") or "").strip()[:6000]
+        if content:
+            history_lines.append(f"{role}: {content}")
+    parts = [base_spec]
+    if history_lines:
+        parts.extend(["Previous search conversation:", *history_lines])
+    if instruction:
+        parts.extend(["Current refinement request:", instruction])
+    return "\n\n".join(part for part in parts if part).strip()[:45000]
 
 
 def _result_payload() -> tuple[str, str, list[dict]]:

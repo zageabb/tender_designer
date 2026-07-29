@@ -17,6 +17,7 @@
   <div class="hero-actions">
     <a class="btn btn-outline-dark btn-lg" href="{{ url_for('tenders.edit_tender', tender_id=tender.id) }}">Edit Tender</a>
     <a class="btn btn-primary btn-lg" href="{{ url_for('rfqs.create_rfq', tender_id=tender.id) }}">Create RFI</a>
+    <a class="btn btn-outline-primary btn-lg" href="{{ url_for('computer_finder.select_tender_items', tender_id=tender.id) }}">Find Products</a>
     <a class="btn btn-outline-light btn-lg" href="{{ url_for('mailbox.index', tender_id=tender.id) }}">Open Mailbox</a>
     <form method="post" action="{{ url_for('tenders.delete_tender', tender_id=tender.id) }}" onsubmit="return confirm('Delete tender {{ tender.tender_number }}? This cannot be undone.');">
       <button class="btn btn-outline-danger btn-lg" type="submit">Delete Tender</button>

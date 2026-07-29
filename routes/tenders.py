@@ -36,6 +36,7 @@ TENDER_STATUS_OPTIONS = [
     "Quoted",
     "Submitted",
     "Awarded",
+    "No Bid",
     "Lost",
     "Cancelled",
 ]
