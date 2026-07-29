@@ -20,7 +20,7 @@ os.environ["SECRET_KEY"] = "test-secret"
 
 from app import create_app  # noqa: E402
 from database import db  # noqa: E402
-from models import WorkerLease  # noqa: E402
+from models import Tender, WorkerLease  # noqa: E402
 from services.agentic_web_search import (  # noqa: E402
     DDGSSearchProvider,
     Evidence,
@@ -79,6 +79,36 @@ class UpgradeTestCase(unittest.TestCase):
         self.assertEqual(self.client.get("/admin/").status_code, 302)
         self._login()
         self.assertEqual(self.client.get("/admin/").status_code, 200)
+
+    def test_dashboard_orders_tenders_by_date_then_status(self) -> None:
+        with self.app.app_context():
+            db.session.add_all(
+                [
+                    Tender(
+                        customer_name="Later Customer",
+                        tender_number="ORDER-LATER",
+                        status="New",
+                        submission_date=datetime(2026, 8, 10).date(),
+                    ),
+                    Tender(
+                        customer_name="Earlier Customer",
+                        tender_number="ORDER-EARLIER",
+                        status="Ready For Review",
+                        submission_date=datetime(2026, 8, 5).date(),
+                    ),
+                    Tender(
+                        customer_name="Same Date Quoted",
+                        tender_number="ORDER-SAME-QUOTED",
+                        status="Quoted",
+                        submission_date=datetime(2026, 8, 5).date(),
+                    ),
+                ]
+            )
+            db.session.commit()
+        self._login()
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertLess(body.index("ORDER-SAME-QUOTED"), body.index("ORDER-EARLIER"))
+        self.assertLess(body.index("ORDER-EARLIER"), body.index("ORDER-LATER"))
 
     def test_csrf_rejects_unprotected_mutation(self) -> None:
         self._login()

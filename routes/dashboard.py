@@ -38,8 +38,8 @@ def index():
     outstanding_tenders = sorted(
         outstanding_tenders,
         key=lambda tender: (
-            OUTSTANDING_TENDER_STATUS_ORDER.get(tender.status, 99),
             tender.submission_date or date.max,
+            OUTSTANDING_TENDER_STATUS_ORDER.get(tender.status, 99),
             tender.tender_number or "",
         ),
     )[:12]
