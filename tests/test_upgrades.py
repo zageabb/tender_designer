@@ -197,6 +197,7 @@ class UpgradeTestCase(unittest.TestCase):
         self.assertIn("16GB RAM, 512GB SSD, Windows 11 Pro", body)
         self.assertIn("Three-year onsite warranty", body)
         self.assertNotIn('<aside class="chat-panel', body)
+        self.assertIn("Live Research Activity", body)
         self.assertIn(f'<option value="{tender_id}" selected>', body)
 
     def test_computer_finder_follow_up_includes_previous_result(self) -> None:
@@ -213,6 +214,33 @@ class UpgradeTestCase(unittest.TestCase):
         self.assertIn("25 business laptops", search_spec)
         self.assertIn("HP ProBook 440", search_spec)
         self.assertIn("under £900", search_spec)
+
+    def test_computer_finder_search_starts_background_job_and_reports_status(self) -> None:
+        self._login()
+        token = self._csrf_token("/computer-finder/")
+        queued_job = {"id": "job-123", "status": "queued", "events": []}
+        completed_job = {
+            "id": "job-123",
+            "status": "completed",
+            "phase": "Complete",
+            "message": "Recommendation",
+            "sources": [],
+            "steps": [],
+            "events": [{"kind": "site", "status": "returned", "label": "Supplier"}],
+        }
+        with patch("routes.computer_finder.create_computer_finder_job", return_value=queued_job):
+            response = self.client.post(
+                "/computer-finder/search",
+                json={"base_spec": "Business laptop"},
+                headers={"X-CSRFToken": token},
+            )
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.get_json()["job"]["id"], "job-123")
+
+        with patch("routes.computer_finder.get_computer_finder_job", return_value=completed_job):
+            status = self.client.get("/computer-finder/search/job-123")
+        self.assertEqual(status.status_code, 200)
+        self.assertEqual(status.get_json()["job"]["events"][0]["status"], "returned")
 
     def test_computer_finder_exposes_and_updates_its_instructions(self) -> None:
         self._login()

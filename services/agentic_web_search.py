@@ -7,6 +7,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from typing import Callable
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -126,6 +127,7 @@ class OllamaWebResearchAgent:
         max_rounds: int = 3,
         max_pages: int = 10,
         results_per_query: int = 6,
+        progress_callback: Callable[[dict], None] | None = None,
     ) -> None:
         self.client = OllamaClient(ollama_url)
         self.model = model
@@ -136,15 +138,23 @@ class OllamaWebResearchAgent:
         self.max_rounds = max(1, min(max_rounds, 5))
         self.max_pages = max(1, min(max_pages, 20))
         self.results_per_query = max(2, min(results_per_query, 10))
+        self.progress_callback = progress_callback or (lambda _event: None)
 
     def research(self, specification: str, market: str, current_date: str) -> dict:
         queries, requirements, planning_step = self._plan(specification, market)
+        self.progress_callback({"kind": "phase", "status": "returned", "label": planning_step, "phase": "Searching"})
         evidence: list[Evidence] = []
         seen_urls: set[str] = set()
         steps = [planning_step]
         diagnostics: list[str] = []
 
         for round_number in range(1, self.max_rounds + 1):
+            self.progress_callback({
+                "kind": "phase",
+                "status": "running",
+                "label": f"Research round {round_number} started",
+                "phase": f"Searching — round {round_number}",
+            })
             candidates, round_diagnostics = self._search_round(queries, seen_urls)
             diagnostics.extend(round_diagnostics)
             remaining = self.max_pages - len(evidence)
@@ -168,6 +178,12 @@ class OllamaWebResearchAgent:
 
         if not evidence:
             raise ValueError("The research agent found no readable product evidence.")
+        self.progress_callback({
+            "kind": "phase",
+            "status": "running",
+            "label": f"Synthesising recommendation from {len(evidence)} sources",
+            "phase": "Producing recommendation",
+        })
         answer = self._synthesise(specification, requirements, evidence, market, current_date)
         answer, invalid_citations = _validate_citations(answer, evidence)
         if invalid_citations:
@@ -216,6 +232,13 @@ Specification:
         results: list[SearchResult] = []
         diagnostics: list[str] = []
         query_rows: list[tuple[str, list[SearchResult]]] = []
+        for query in queries:
+            self.progress_callback({
+                "kind": "search",
+                "status": "initiated",
+                "label": query,
+                "detail": "Search request initiated",
+            })
         with ThreadPoolExecutor(max_workers=min(4, len(queries) or 1)) as executor:
             futures = {
                 executor.submit(self.search_provider.search, query, self.results_per_query): query
@@ -224,9 +247,22 @@ Specification:
             for future in as_completed(futures):
                 query = futures[future]
                 try:
-                    query_rows.append((query, future.result()))
+                    rows = future.result()
+                    query_rows.append((query, rows))
+                    self.progress_callback({
+                        "kind": "search",
+                        "status": "returned",
+                        "label": query,
+                        "detail": f"{len(rows)} results returned",
+                    })
                 except Exception as exc:
                     diagnostics.append(f"Search failed for '{query[:100]}': {type(exc).__name__}: {exc}")
+                    self.progress_callback({
+                        "kind": "search",
+                        "status": "failed",
+                        "label": query,
+                        "detail": f"{type(exc).__name__}: {exc}",
+                    })
         for query, rows in sorted(query_rows, key=lambda item: queries.index(item[0])):
             for row in rows:
                 url = _normalise_url(row.url)
@@ -247,16 +283,50 @@ Specification:
                 executor.submit(self.page_reader.read, result, source_id): source_id
                 for source_id, result in indexed
             }
+            result_by_id = {source_id: result for source_id, result in indexed}
+            for source_id, result in indexed:
+                self.progress_callback({
+                    "kind": "site",
+                    "status": "initiated",
+                    "label": result.title or result.url,
+                    "url": result.url,
+                    "detail": f"Opening source {source_id}",
+                    "phase": "Reading sites",
+                })
             for future in as_completed(futures):
+                source_id = futures[future]
+                result = result_by_id[source_id]
                 try:
                     item = future.result()
                 except Exception as exc:
                     diagnostics.append(
-                        f"Could not read source {futures[future]}: {type(exc).__name__}: {exc}"
+                        f"Could not read source {source_id}: {type(exc).__name__}: {exc}"
                     )
                     item = None
+                    self.progress_callback({
+                        "kind": "site",
+                        "status": "failed",
+                        "label": result.title or result.url,
+                        "url": result.url,
+                        "detail": f"{type(exc).__name__}: {exc}",
+                    })
                 if item:
                     evidence.append(item)
+                    self.progress_callback({
+                        "kind": "site",
+                        "status": "returned",
+                        "label": item.title or item.url,
+                        "url": item.url,
+                        "detail": f"Source {source_id} retained as evidence",
+                    })
+                elif not future.exception():
+                    self.progress_callback({
+                        "kind": "site",
+                        "status": "unreadable",
+                        "label": result.title or result.url,
+                        "url": result.url,
+                        "detail": "Page returned no readable product evidence",
+                    })
         return sorted(evidence, key=lambda item: item.source_id), diagnostics
 
     def _assess_and_refine(

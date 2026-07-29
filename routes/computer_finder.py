@@ -9,10 +9,9 @@ from flask import Blueprint, current_app, jsonify, render_template, request, sen
 from database import db
 from models import AppSetting, Tender, TenderDocument, TenderItem, TenderSubItem
 from services.computer_finder_service import (
-    ComputerFinderConfigError,
-    find_computer_for_spec,
     parse_domain_list,
 )
+from services.computer_finder_jobs import create_computer_finder_job, get_computer_finder_job
 from services.file_storage import save_tender_bytes
 from services.prompt_service import PROMPT_FILES, ensure_prompt_files, get_prompt_content, save_prompt_content
 from services.settings_service import DEFAULT_SETTINGS, ensure_default_settings, get_setting
@@ -85,20 +84,18 @@ def select_tender_items(tender_id: int):
 def search():
     payload = request.get_json(force=True)
     computer_spec = _conversation_search_spec(payload)
-    try:
-        result = find_computer_for_spec(computer_spec)
-    except ComputerFinderConfigError as exc:
-        return jsonify({"ok": False, "message": str(exc), "steps": getattr(exc, "steps", [])}), 400
-    except Exception as exc:
-        return jsonify({"ok": False, "message": f"Computer search failed: {exc}"}), 500
-    return jsonify(
-        {
-            "ok": True,
-            "message": result["answer"],
-            "sources": result.get("sources", []),
-            "steps": result.get("steps", []),
-        }
-    )
+    if not computer_spec:
+        return jsonify({"ok": False, "message": "Enter a computer specification before searching."}), 400
+    job = create_computer_finder_job(current_app._get_current_object(), computer_spec)
+    return jsonify({"ok": True, "job": job}), 202
+
+
+@computer_finder_bp.route("/search/<job_id>", methods=["GET"])
+def search_status(job_id: str):
+    job = get_computer_finder_job(job_id)
+    if job is None:
+        return jsonify({"ok": False, "message": "Computer Finder job not found."}), 404
+    return jsonify({"ok": True, "job": job})
 
 
 def _selected_tender_lines(tender: Tender | None) -> tuple[list[TenderItem], list[TenderSubItem]]:

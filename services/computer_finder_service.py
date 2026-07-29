@@ -4,6 +4,7 @@ import html
 import re
 from dataclasses import dataclass
 from datetime import date
+from typing import Callable
 from urllib.parse import parse_qs, unquote, urlparse
 
 import requests
@@ -104,13 +105,17 @@ def get_computer_finder_config() -> ComputerFinderConfig:
     )
 
 
-def find_computer_for_spec(computer_spec: str, config: ComputerFinderConfig | None = None) -> dict:
+def find_computer_for_spec(
+    computer_spec: str,
+    config: ComputerFinderConfig | None = None,
+    progress_callback: Callable[[dict], None] | None = None,
+) -> dict:
     if not computer_spec.strip():
         raise ComputerFinderConfigError("Enter a computer specification before searching.")
 
     config = config or get_computer_finder_config()
     if config.search_provider == "ollama_agent":
-        return _find_with_ollama_research_agent(computer_spec, config)
+        return _find_with_ollama_research_agent(computer_spec, config, progress_callback)
 
     client = OllamaClient(config.ollama_url)
     search_plan, planning_steps = _plan_searches(client, config.model, computer_spec, config)
@@ -141,7 +146,11 @@ def find_computer_for_spec(computer_spec: str, config: ComputerFinderConfig | No
     }
 
 
-def _find_with_ollama_research_agent(computer_spec: str, config: ComputerFinderConfig) -> dict:
+def _find_with_ollama_research_agent(
+    computer_spec: str,
+    config: ComputerFinderConfig,
+    progress_callback: Callable[[dict], None] | None = None,
+) -> dict:
     market = ", ".join(part for part in [config.city, config.region, config.country] if part) or "the configured market"
     region = {
         "GB": "uk-en",
@@ -160,6 +169,7 @@ def _find_with_ollama_research_agent(computer_spec: str, config: ComputerFinderC
         max_rounds=config.max_search_rounds,
         max_pages=config.max_pages_to_read,
         results_per_query=config.search_results_per_domain,
+        progress_callback=progress_callback,
     )
     try:
         return agent.research(computer_spec.strip(), market, date.today().isoformat())

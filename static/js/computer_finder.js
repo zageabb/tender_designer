@@ -9,6 +9,10 @@ const computerFinderSaveActions = document.getElementById("computer-finder-save-
 const computerFinderSaveStatus = document.getElementById("computer-finder-save-status");
 let computerFinderHistory = [];
 let latestComputerFinderResult = null;
+let activeComputerFinderJobId = null;
+let activeComputerFinderSpec = "";
+let computerFinderPollTimer = null;
+let computerFinderWorkingMessage = null;
 
 function renderComputerFinderMarkdown(text) {
   if (typeof renderMarkdown === "function") return renderMarkdown(text);
@@ -45,6 +49,8 @@ function saveConversationState() {
     baseSpec: computerFinderBaseSpec?.value || "",
     history: computerFinderHistory.slice(-8),
     latest: latestComputerFinderResult,
+    activeJobId: activeComputerFinderJobId,
+    activeJobSpec: activeComputerFinderSpec,
   };
   sessionStorage.setItem(computerFinderWorkspace.dataset.storageKey, JSON.stringify(state));
 }
@@ -61,7 +67,10 @@ function restoreConversationState() {
     computerFinderHistory = Array.isArray(state.history) ? state.history : [];
     computerFinderHistory.forEach((entry) => appendFinderMessage(entry.role, entry.content, entry.sources || [], []));
     latestComputerFinderResult = state.latest || null;
+    activeComputerFinderJobId = state.activeJobId || null;
+    activeComputerFinderSpec = state.activeJobSpec || state.baseSpec || "";
     if (latestComputerFinderResult) computerFinderSaveActions?.classList.remove("d-none");
+    if (activeComputerFinderJobId) resumeComputerFinderJob(activeComputerFinderJobId);
   } catch (error) {
     sessionStorage.removeItem(computerFinderWorkspace.dataset.storageKey);
   }
@@ -74,6 +83,116 @@ async function computerFinderJsonResponse(response) {
   } catch (parseError) {
     return { message: responseText || parseError.message };
   }
+}
+
+function setComputerFinderRunning(running) {
+  const submitButton = document.getElementById("computer-finder-submit");
+  if (!submitButton) return;
+  if (running) {
+    submitButton.disabled = true;
+    submitButton.dataset.originalText ||= submitButton.textContent;
+    submitButton.textContent = "Researching...";
+  } else {
+    submitButton.disabled = false;
+    submitButton.textContent = submitButton.dataset.originalText || "Search Selected Items";
+  }
+}
+
+function renderComputerFinderRuntime(job) {
+  const events = Array.isArray(job.events) ? job.events : [];
+  const siteEvents = events.filter((event) => event.kind === "site");
+  const latestBySite = new Map();
+  siteEvents.forEach((event) => latestBySite.set(event.url || event.label, event));
+  const siteStates = Array.from(latestBySite.values());
+  document.getElementById("computer-finder-runtime-phase").textContent = job.phase || "Working";
+  document.getElementById("computer-finder-count-initiated").textContent = String(
+    siteStates.length || events.filter((event) => event.status === "initiated").length
+  );
+  document.getElementById("computer-finder-count-returned").textContent = String(
+    siteStates.filter((event) => event.status === "returned").length
+  );
+  document.getElementById("computer-finder-count-failed").textContent = String(
+    siteStates.filter((event) => ["failed", "unreadable"].includes(event.status)).length
+  );
+  const started = job.started_at ? new Date(job.started_at).getTime() : Date.now();
+  const ended = job.completed_at ? new Date(job.completed_at).getTime() : Date.now();
+  const elapsedSeconds = Math.max(0, Math.floor((ended - started) / 1000));
+  document.getElementById("computer-finder-runtime-elapsed").textContent =
+    `${Math.floor(elapsedSeconds / 60)}:${String(elapsedSeconds % 60).padStart(2, "0")}`;
+  const eventsRoot = document.getElementById("computer-finder-runtime-events");
+  if (!eventsRoot) return;
+  if (!events.length) {
+    eventsRoot.innerHTML = '<p class="small text-muted mb-0">Waiting for the first runtime event…</p>';
+    return;
+  }
+  eventsRoot.innerHTML = events.slice(-80).reverse().map((event) => {
+    const label = escapeHtml(event.label || "Research activity");
+    const detail = event.detail ? `<small>${escapeHtml(event.detail)}</small>` : "";
+    const linkedLabel = event.url
+      ? `<a href="${escapeHtml(event.url)}" target="_blank" rel="noopener noreferrer">${label}</a>`
+      : label;
+    return `<div class="computer-finder-runtime-event status-${escapeHtml(event.status)}">
+      <span class="computer-finder-runtime-dot"></span>
+      <div><strong>${linkedLabel}</strong>${detail}</div>
+      <span class="computer-finder-runtime-status">${escapeHtml(event.status)}</span>
+    </div>`;
+  }).join("");
+}
+
+function finishComputerFinderJob(job) {
+  clearTimeout(computerFinderPollTimer);
+  computerFinderPollTimer = null;
+  computerFinderWorkingMessage?.remove();
+  computerFinderWorkingMessage = null;
+  activeComputerFinderJobId = null;
+  setComputerFinderRunning(false);
+  if (job.status === "completed") {
+    const answer = job.message || "";
+    appendFinderMessage("assistant", answer, job.sources || [], job.steps || []);
+    computerFinderHistory.push({ role: "assistant", content: answer, sources: job.sources || [] });
+    latestComputerFinderResult = {
+      spec: activeComputerFinderSpec || computerFinderBaseSpec?.value || "",
+      message: answer,
+      sources: job.sources || [],
+    };
+    computerFinderSaveActions?.classList.remove("d-none");
+    setComputerFinderSaveStatus("");
+  } else {
+    const message = `Search could not be completed: ${job.error || "Unknown error"}`;
+    appendFinderMessage("assistant", message, [], job.steps || []);
+    computerFinderHistory.push({ role: "assistant", content: message });
+  }
+  saveConversationState();
+}
+
+async function pollComputerFinderJob(jobId) {
+  try {
+    const statusUrl = computerFinderWorkspace.dataset.searchStatusUrl.replace("JOB_ID", encodeURIComponent(jobId));
+    const response = await fetch(statusUrl);
+    const payload = await computerFinderJsonResponse(response);
+    if (!response.ok || !payload.ok) throw new Error(payload.message || "Could not read search progress.");
+    const job = payload.job;
+    renderComputerFinderRuntime(job);
+    if (["completed", "failed"].includes(job.status)) {
+      finishComputerFinderJob(job);
+      return;
+    }
+    computerFinderPollTimer = setTimeout(() => pollComputerFinderJob(jobId), 1000);
+  } catch (error) {
+    document.getElementById("computer-finder-runtime-phase").textContent = `Progress unavailable: ${error.message}`;
+    computerFinderPollTimer = setTimeout(() => pollComputerFinderJob(jobId), 2500);
+  }
+}
+
+function resumeComputerFinderJob(jobId) {
+  setComputerFinderRunning(true);
+  if (!computerFinderWorkingMessage) {
+    computerFinderWorkingMessage = document.createElement("div");
+    computerFinderWorkingMessage.className = "finder-message finder-message-assistant finder-message-working";
+    computerFinderWorkingMessage.innerHTML = '<div class="finder-message-label">Computer Finder</div><div>Research continues in the background. Live activity is shown on the right.</div>';
+    computerFinderConversation.appendChild(computerFinderWorkingMessage);
+  }
+  pollComputerFinderJob(jobId);
 }
 
 computerFinderForm?.addEventListener("submit", async (event) => {
@@ -90,13 +209,7 @@ computerFinderForm?.addEventListener("submit", async (event) => {
   const requestHistory = computerFinderHistory.slice(-6);
   computerFinderHistory.push({ role: "user", content: userMessage });
   computerFinderInstruction.value = "";
-  submitButton.disabled = true;
-  submitButton.dataset.originalText = submitButton.textContent;
-  submitButton.textContent = "Researching...";
-  const workingMessage = document.createElement("div");
-  workingMessage.className = "finder-message finder-message-assistant finder-message-working";
-  workingMessage.innerHTML = '<div class="finder-message-label">Computer Finder</div><div>Searching the web, reading product pages and comparing evidence…</div>';
-  computerFinderConversation.appendChild(workingMessage);
+  setComputerFinderRunning(true);
   try {
     const response = await fetch(computerFinderWorkspace.dataset.searchUrl, {
       method: "POST",
@@ -104,38 +217,40 @@ computerFinderForm?.addEventListener("submit", async (event) => {
       body: JSON.stringify({ base_spec: baseSpec, instruction: userMessage, history: requestHistory }),
     });
     const payload = await computerFinderJsonResponse(response);
-    workingMessage.remove();
     if (!response.ok || !payload.ok) throw new Error(payload.message || "Computer search failed.");
-    const answer = payload.message || "";
-    appendFinderMessage("assistant", answer, payload.sources || [], payload.steps || []);
-    computerFinderHistory.push({ role: "assistant", content: answer, sources: payload.sources || [] });
-    latestComputerFinderResult = {
-      spec: `${baseSpec}\n\nLatest refinement: ${userMessage}`,
-      message: answer,
-      sources: payload.sources || [],
-    };
-    computerFinderSaveActions?.classList.remove("d-none");
-    setComputerFinderSaveStatus("");
+    activeComputerFinderJobId = payload.job.id;
+    activeComputerFinderSpec = `${baseSpec}\n\nLatest refinement: ${userMessage}`;
     saveConversationState();
+    resumeComputerFinderJob(activeComputerFinderJobId);
   } catch (error) {
-    workingMessage.remove();
     appendFinderMessage("assistant", `Search could not be completed: ${error.message}`);
     computerFinderHistory.push({ role: "assistant", content: `Search failed: ${error.message}` });
     saveConversationState();
-  } finally {
-    submitButton.disabled = false;
-    submitButton.textContent = submitButton.dataset.originalText || "Search Selected Items";
+    setComputerFinderRunning(false);
   }
 });
 
 document.getElementById("computer-finder-clear")?.addEventListener("click", () => {
   computerFinderHistory = [];
   latestComputerFinderResult = null;
+  activeComputerFinderJobId = null;
+  activeComputerFinderSpec = "";
+  clearTimeout(computerFinderPollTimer);
+  computerFinderPollTimer = null;
+  computerFinderWorkingMessage = null;
   computerFinderInstruction.value = "";
   computerFinderConversation.innerHTML = "";
   appendFinderMessage("assistant", "Conversation cleared. Update the starting requirements if needed, then begin a new search.");
   computerFinderSaveActions?.classList.add("d-none");
   setComputerFinderSaveStatus("");
+  document.getElementById("computer-finder-runtime-phase").textContent = "Ready";
+  document.getElementById("computer-finder-runtime-elapsed").textContent = "0:00";
+  document.getElementById("computer-finder-runtime-events").innerHTML =
+    '<p class="small text-muted mb-0">Runtime events will appear here when a search starts.</p>';
+  ["initiated", "returned", "failed"].forEach((status) => {
+    document.getElementById(`computer-finder-count-${status}`).textContent = "0";
+  });
+  setComputerFinderRunning(false);
   sessionStorage.removeItem(computerFinderWorkspace.dataset.storageKey);
 });
 
