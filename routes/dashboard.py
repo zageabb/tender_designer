@@ -42,7 +42,7 @@ def index():
             OUTSTANDING_TENDER_STATUS_ORDER.get(tender.status, 99),
             tender.tender_number or "",
         ),
-    )[:12]
+    )
     tender_health = {tender.id: evaluate_tender_health(tender, today=today) for tender in outstanding_tenders}
     chat_context = {"page": "dashboard"}
     return render_template(

@@ -119,6 +119,39 @@ class UpgradeTestCase(unittest.TestCase):
         self.assertLess(body.index("ORDER-EARLIER"), body.index("ORDER-LATER"))
         self.assertNotIn("ORDER-NO-BID", body)
 
+    def test_dashboard_shows_all_non_terminal_tenders(self) -> None:
+        with self.app.app_context():
+            db.session.add_all(
+                [
+                    Tender(
+                        customer_name=f"Active Customer {index}",
+                        tender_number=f"ACTIVE-{index:02d}",
+                        status="New",
+                        submission_date=datetime(2026, 8, index + 1).date(),
+                    )
+                    for index in range(13)
+                ]
+            )
+            db.session.add_all(
+                [
+                    Tender(
+                        customer_name=f"Terminal Customer {status}",
+                        tender_number=f"TERMINAL-{status.upper().replace(' ', '-')}",
+                        status=status,
+                    )
+                    for status in ("Awarded", "Lost", "No Bid", "Cancelled")
+                ]
+            )
+            db.session.commit()
+
+        self._login()
+        body = self.client.get("/").get_data(as_text=True)
+
+        for index in range(13):
+            self.assertIn(f"ACTIVE-{index:02d}", body)
+        for status in ("AWARDED", "LOST", "NO-BID", "CANCELLED"):
+            self.assertNotIn(f"TERMINAL-{status}", body)
+
     def test_no_bid_is_an_inactive_tender_status(self) -> None:
         tender = SimpleNamespace(
             id=1,
