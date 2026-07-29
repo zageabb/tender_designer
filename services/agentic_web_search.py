@@ -143,6 +143,18 @@ class OllamaWebResearchAgent:
     def research(self, specification: str, market: str, current_date: str) -> dict:
         queries, requirements, planning_step = self._plan(specification, market)
         self.progress_callback({"kind": "phase", "status": "returned", "label": planning_step, "phase": "Searching"})
+        requirement_summary = ", ".join(
+            f"{key}: {value}" for key, value in list(requirements.items())[:8]
+        ) or "No structured requirements were returned; the original specification remains authoritative."
+        self.progress_callback({
+            "kind": "reasoning",
+            "status": "summary",
+            "label": "Search plan summary",
+            "detail": (
+                f"Requirements: {requirement_summary} "
+                f"Planned queries: {' | '.join(queries[:6])}"
+            ),
+        })
         evidence: list[Evidence] = []
         seen_urls: set[str] = set()
         steps = [planning_step]
@@ -163,16 +175,40 @@ class OllamaWebResearchAgent:
             opened, read_diagnostics = self._read_pages(candidates[:remaining], len(evidence) + 1)
             diagnostics.extend(read_diagnostics)
             evidence.extend(opened)
-            steps.append(
+            round_summary = (
                 f"Research round {round_number}: ran {len(queries)} queries, found "
                 f"{len(candidates)} new results, and retained {len(opened)} readable sources."
             )
+            steps.append(round_summary)
+            self.progress_callback({
+                "kind": "reasoning",
+                "status": "summary",
+                "label": f"Round {round_number} evidence summary",
+                "detail": round_summary,
+            })
             if round_number >= self.max_rounds or len(evidence) >= self.max_pages:
+                stop_reason = (
+                    "Configured research-round limit reached."
+                    if round_number >= self.max_rounds
+                    else "Configured readable-source limit reached."
+                )
+                self.progress_callback({
+                    "kind": "reasoning",
+                    "status": "summary",
+                    "label": "Why research stopped",
+                    "detail": stop_reason,
+                })
                 break
             queries, complete, assessment = self._assess_and_refine(
                 specification, requirements, evidence, market
             )
             steps.append(assessment)
+            self.progress_callback({
+                "kind": "reasoning",
+                "status": "summary",
+                "label": "Evidence-gap assessment",
+                "detail": assessment,
+            })
             if complete or not queries:
                 break
 
@@ -183,6 +219,15 @@ class OllamaWebResearchAgent:
             "status": "running",
             "label": f"Synthesising recommendation from {len(evidence)} sources",
             "phase": "Producing recommendation",
+        })
+        self.progress_callback({
+            "kind": "reasoning",
+            "status": "summary",
+            "label": "Recommendation basis",
+            "detail": (
+                f"Comparing {len(evidence)} retained sources against the extracted requirements. "
+                "Unsupported claims will be omitted and factual claims must use validated source citations."
+            ),
         })
         answer = self._synthesise(specification, requirements, evidence, market, current_date)
         answer, invalid_citations = _validate_citations(answer, evidence)

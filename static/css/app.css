@@ -706,6 +706,28 @@ body {
   background: #bb4a4a;
 }
 
+.computer-finder-runtime-event.kind-reasoning {
+  margin: 0.35rem 0;
+  padding: 0.75rem 0.55rem;
+  border: 1px solid rgba(39, 104, 132, 0.14);
+  border-radius: 0.7rem;
+  background: rgba(225, 240, 246, 0.62);
+}
+
+.computer-finder-runtime-event.kind-reasoning .computer-finder-runtime-dot {
+  background: #276884;
+}
+
+.computer-finder-runtime-kind {
+  display: block;
+  margin-bottom: 0.16rem;
+  color: #276884;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .computer-finder-runtime-status {
   color: #63747d;
   font-size: 0.64rem;

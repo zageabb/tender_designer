@@ -128,12 +128,13 @@ function renderComputerFinderRuntime(job) {
   eventsRoot.innerHTML = events.slice(-80).reverse().map((event) => {
     const label = escapeHtml(event.label || "Research activity");
     const detail = event.detail ? `<small>${escapeHtml(event.detail)}</small>` : "";
+    const eventType = event.kind === "reasoning" ? '<span class="computer-finder-runtime-kind">Reasoning summary</span>' : "";
     const linkedLabel = event.url
       ? `<a href="${escapeHtml(event.url)}" target="_blank" rel="noopener noreferrer">${label}</a>`
       : label;
-    return `<div class="computer-finder-runtime-event status-${escapeHtml(event.status)}">
+    return `<div class="computer-finder-runtime-event kind-${escapeHtml(event.kind)} status-${escapeHtml(event.status)}">
       <span class="computer-finder-runtime-dot"></span>
-      <div><strong>${linkedLabel}</strong>${detail}</div>
+      <div>${eventType}<strong>${linkedLabel}</strong>${detail}</div>
       <span class="computer-finder-runtime-status">${escapeHtml(event.status)}</span>
     </div>`;
   }).join("");
