@@ -302,6 +302,8 @@ class UpgradeTestCase(unittest.TestCase):
         self.assertIn('id="research-history-list"', body)
         self.assertIn('id="research-model"', body)
         self.assertIn('name="general_search_instructions"', body)
+        self.assertIn("Live Research Activity", body)
+        self.assertIn('class="computer-finder-runtime research-chat-runtime"', body)
         self.assertNotIn("Computer Finder Recommendation", body)
 
     def test_general_search_can_disable_allowed_website_filter(self) -> None:

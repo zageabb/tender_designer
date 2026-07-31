@@ -132,7 +132,6 @@ function renderResearchRuntime(job, chatId) {
   document.getElementById("computer-finder-runtime-phase").textContent = job.phase || "Working";
   document.getElementById("computer-finder-count-initiated").textContent = String(states.length);
   document.getElementById("computer-finder-count-returned").textContent = String(returned);
-  document.getElementById("computer-finder-count-returned-detail").textContent = String(returned);
   document.getElementById("computer-finder-count-failed").textContent = String(failed);
   const started = job.started_at ? new Date(job.started_at).getTime() : Date.now();
   const ended = job.completed_at ? new Date(job.completed_at).getTime() : Date.now();

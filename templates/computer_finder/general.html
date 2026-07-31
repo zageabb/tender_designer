@@ -42,21 +42,6 @@
       </div>
     </header>
 
-    <details class="research-activity-drawer">
-      <summary>
-        <span><strong id="computer-finder-runtime-phase">Ready</strong> · <span id="computer-finder-runtime-elapsed">0:00</span></span>
-        <span class="small text-muted"><span id="computer-finder-count-returned">0</span> sources retained</span>
-      </summary>
-      <div class="computer-finder-runtime-counts">
-        <div><strong id="computer-finder-count-initiated">0</strong><span>Initiated</span></div>
-        <div><strong id="computer-finder-count-returned-detail">0</strong><span>Returned</span></div>
-        <div><strong id="computer-finder-count-failed">0</strong><span>Failed</span></div>
-      </div>
-      <div id="computer-finder-runtime-events" class="computer-finder-runtime-events">
-        <p class="small text-muted mb-0">Research activity will appear here after you send a question.</p>
-      </div>
-    </details>
-
     <div id="computer-finder-conversation" class="computer-finder-conversation research-chat-conversation" aria-live="polite"></div>
 
     <form id="computer-finder-form" class="research-chat-composer">
@@ -67,6 +52,24 @@
       </div>
     </form>
   </div>
+
+  <aside class="computer-finder-runtime research-chat-runtime" aria-live="polite">
+    <div class="computer-finder-runtime-header">
+      <div>
+        <div class="finder-message-label mb-1">Live Research Activity</div>
+        <strong id="computer-finder-runtime-phase">Ready</strong>
+      </div>
+      <span class="computer-finder-runtime-elapsed" id="computer-finder-runtime-elapsed">0:00</span>
+    </div>
+    <div class="computer-finder-runtime-counts">
+      <div><strong id="computer-finder-count-initiated">0</strong><span>Initiated</span></div>
+      <div><strong id="computer-finder-count-returned">0</strong><span>Returned</span></div>
+      <div><strong id="computer-finder-count-failed">0</strong><span>Failed</span></div>
+    </div>
+    <div id="computer-finder-runtime-events" class="computer-finder-runtime-events">
+      <p class="small text-muted mb-0">Research activity will appear here after you send a question.</p>
+    </div>
+  </aside>
 </section>
 
 <div
