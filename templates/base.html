@@ -25,6 +25,7 @@
           <a class="nav-link" href="{{ url_for('tenders.list_tenders') }}">Tenders</a>
           <a class="nav-link" href="{{ url_for('mailbox.index') }}">Mailbox</a>
           <a class="nav-link" href="{{ url_for('computer_finder.index') }}">Computer Finder</a>
+          <a class="nav-link" href="{{ url_for('computer_finder.general_search') }}">General Search</a>
           <a class="nav-link" href="{{ url_for('settings.index') }}">Settings</a>
           <a class="nav-link" href="{{ url_for('admin.index') }}">Admin</a>
           <form method="post" action="{{ url_for('auth.logout') }}" class="d-inline">
@@ -45,11 +46,11 @@
           </div>
         {% endif %}
       {% endwith %}
-      <div class="layout-grid{% if not current_user.is_authenticated or (chat_context or {}).get('page') in ['computer_finder', 'computer_finder_selection'] %} layout-grid-full{% endif %}">
+      <div class="layout-grid{% if not current_user.is_authenticated or (chat_context or {}).get('page') in ['computer_finder', 'computer_finder_selection', 'general_search'] %} layout-grid-full{% endif %}">
         <main>
           {% block content %}{% endblock %}
         </main>
-        {% if current_user.is_authenticated and (chat_context or {}).get("page") not in ["computer_finder", "computer_finder_selection"] %}{% include "partials/chat_panel.html" %}{% endif %}
+        {% if current_user.is_authenticated and (chat_context or {}).get("page") not in ["computer_finder", "computer_finder_selection", "general_search"] %}{% include "partials/chat_panel.html" %}{% endif %}
       </div>
     </div>
 

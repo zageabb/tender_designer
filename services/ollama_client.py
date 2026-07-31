@@ -37,7 +37,7 @@ class OllamaClient:
         return response.json().get("response", "").strip()
 
     def list_models(self) -> list[str]:
-        response = requests.get(f"{self.base_url}/api/tags", timeout=500)
+        response = requests.get(f"{self.base_url}/api/tags", timeout=10)
         response.raise_for_status()
         return [model.get("name", "") for model in response.json().get("models", [])]
 

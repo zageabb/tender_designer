@@ -216,6 +216,19 @@ class UpgradeTestCase(unittest.TestCase):
         self.assertIn("HP ProBook 440", search_spec)
         self.assertIn("under £900", search_spec)
 
+    def test_general_search_context_keeps_more_than_six_messages(self) -> None:
+        search_spec = _conversation_search_spec(
+            {
+                "base_spec": "What changed since our last question?",
+                "history": [
+                    {"role": "user" if index % 2 == 0 else "assistant", "content": f"Context message {index}"}
+                    for index in range(10)
+                ],
+            }
+        )
+        self.assertIn("Context message 0", search_spec)
+        self.assertIn("Context message 9", search_spec)
+
     def test_computer_finder_search_starts_background_job_and_reports_status(self) -> None:
         self._login()
         token = self._csrf_token("/computer-finder/")
@@ -256,16 +269,13 @@ class UpgradeTestCase(unittest.TestCase):
         self.assertEqual(finder.status_code, 200)
         self.assertIn("Computer Finder Query Planning", body)
         self.assertIn("Computer Finder Recommendation", body)
-        self.assertIn("General Search Query Planning", body)
-        self.assertIn("General Search Answer", body)
-        self.assertIn("Save Research Instructions", body)
+        self.assertNotIn("General Search Query Planning", body)
+        self.assertIn("Save Finder Instructions", body)
 
         token = self._csrf_token("/computer-finder/")
         prompts = {
             "computer_finder_query_planning": "Plan searches using {{computer_spec}}",
             "computer_finder_search": "Recommend products using {{search_results}}",
-            "general_search_query_planning": "Plan research using {{search_request}}",
-            "general_search_answer": "Answer using {{search_results}}",
         }
         with patch("routes.computer_finder.save_prompt_content") as save_prompt:
             response = self.client.post(
@@ -279,10 +289,20 @@ class UpgradeTestCase(unittest.TestCase):
             [
                 call("computer_finder_query_planning", prompts["computer_finder_query_planning"]),
                 call("computer_finder_search", prompts["computer_finder_search"]),
-                call("general_search_query_planning", prompts["general_search_query_planning"]),
-                call("general_search_answer", prompts["general_search_answer"]),
             ],
         )
+
+    def test_general_search_has_history_model_and_persona_controls(self) -> None:
+        self._login()
+        response = self.client.get("/computer-finder/general")
+        body = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("General Search Query Planning", body)
+        self.assertIn("General Search Answer", body)
+        self.assertIn('id="research-history-list"', body)
+        self.assertIn('id="research-model"', body)
+        self.assertIn('name="general_search_instructions"', body)
+        self.assertNotIn("Computer Finder Recommendation", body)
 
     def test_general_search_can_disable_allowed_website_filter(self) -> None:
         self._login()
@@ -295,6 +315,7 @@ class UpgradeTestCase(unittest.TestCase):
                     "base_spec": "Compare approaches to heat-pump policy",
                     "mode": "general",
                     "use_allowed_websites": False,
+                    "model": "research-model:latest",
                 },
                 headers={"X-CSRFToken": token},
             )
@@ -304,6 +325,7 @@ class UpgradeTestCase(unittest.TestCase):
             "Compare approaches to heat-pump policy",
             mode="general",
             use_allowed_websites=False,
+            model="research-model:latest",
         )
 
     def test_csrf_rejects_unprotected_mutation(self) -> None:

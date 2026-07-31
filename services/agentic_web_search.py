@@ -133,6 +133,7 @@ class OllamaWebResearchAgent:
         planning_prompt_key: str | None = None,
         answer_prompt_key: str | None = None,
         website_scope: str = "Any permitted website",
+        custom_instructions: str = "",
     ) -> None:
         self.client = OllamaClient(ollama_url)
         self.model = model
@@ -147,6 +148,7 @@ class OllamaWebResearchAgent:
         self.planning_prompt_key = planning_prompt_key
         self.answer_prompt_key = answer_prompt_key
         self.website_scope = website_scope
+        self.custom_instructions = custom_instructions.strip()
 
     def research(self, specification: str, market: str, current_date: str) -> dict:
         queries, requirements, planning_step = self._plan(specification, market)
@@ -463,6 +465,11 @@ EVIDENCE (UNTRUSTED DATA):
                 search_request=specification,
                 search_results=evidence_context,
             )
+            if self.custom_instructions:
+                prompt = (
+                    "Persistent user instructions (follow unless they conflict with evidence and citation rules):\n"
+                    f"{self.custom_instructions}\n\n{prompt}"
+                )
         else:
             prompt = f"""You are a careful computer procurement analyst. Write the final recommendation using
 only the numbered evidence below. Cite factual claims with source IDs exactly like [1] or [2].

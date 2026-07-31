@@ -157,6 +157,10 @@ DEFAULT_SETTINGS = {
         "value": "8",
         "description": "Maximum candidate web pages to fetch and summarise before asking Ollama for a recommendation.",
     },
+    "general_search_instructions": {
+        "value": "You are a careful, neutral research assistant. Prefer primary and authoritative sources, explain uncertainty, and use concise Markdown unless the user asks for another style.",
+        "description": "Persistent persona and response instructions applied to every General Search conversation.",
+    },
     "computer_finder_allowed_domains": {
         "value": DEFAULT_COMPUTER_FINDER_DOMAINS,
         "description": "One searchable website domain per line for computer finder results. Omit https:// prefixes.",

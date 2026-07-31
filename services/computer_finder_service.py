@@ -128,12 +128,17 @@ def find_computer_for_spec(
     progress_callback: Callable[[dict], None] | None = None,
     mode: str = "computer",
     use_allowed_websites: bool = True,
+    model: str | None = None,
 ) -> dict:
     if not computer_spec.strip():
         raise ComputerFinderConfigError("Enter a computer specification before searching.")
 
     mode = "general" if mode == "general" else "computer"
     config = config or get_computer_finder_config(mode, use_allowed_websites)
+    if model:
+        config = ComputerFinderConfig(
+            **{**config.__dict__, "model": model.strip()[:200]}
+        )
     if config.search_provider == "ollama_agent":
         return _find_with_ollama_research_agent(computer_spec, config, progress_callback, mode)
 
@@ -198,6 +203,7 @@ def _find_with_ollama_research_agent(
             if config.allowed_domains
             else "Any website except the blocked list"
         ),
+        custom_instructions=(get_setting("general_search_instructions") or "" if mode == "general" else ""),
     )
     try:
         return agent.research(computer_spec.strip(), market, date.today().isoformat())
@@ -213,7 +219,7 @@ def build_computer_finder_prompt(
 ) -> str:
     market_parts = [part for part in [config.city, config.region, config.country] if part]
     market_context = ", ".join(market_parts) if market_parts else "No market location configured"
-    return render_prompt(
+    prompt = render_prompt(
         "general_search_answer" if mode == "general" else "computer_finder_search",
         current_date=date.today().isoformat(),
         market_context=market_context,
@@ -228,6 +234,11 @@ def build_computer_finder_prompt(
         ),
         search_results=search_results_context,
     )
+    if mode == "general":
+        instructions = (get_setting("general_search_instructions") or "").strip()
+        if instructions:
+            prompt = f"Persistent user instructions (follow unless they conflict with evidence and citation rules):\n{instructions}\n\n{prompt}"
+    return prompt
 
 
 def _int_setting(key: str, fallback: int, minimum: int, maximum: int) -> int:

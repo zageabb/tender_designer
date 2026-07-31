@@ -24,6 +24,7 @@ def create_computer_finder_job(
     computer_spec: str,
     mode: str = "computer",
     use_allowed_websites: bool = True,
+    model: str | None = None,
 ) -> dict:
     job_id = uuid.uuid4().hex
     job = {
@@ -36,6 +37,7 @@ def create_computer_finder_job(
         "steps": [],
         "events": [],
         "mode": mode,
+        "model": model,
         "created_at": _now_iso(),
         "started_at": None,
         "completed_at": None,
@@ -50,7 +52,7 @@ def create_computer_finder_job(
             _jobs.pop(old_id, None)
     threading.Thread(
         target=_run_job,
-        args=(app, job_id, computer_spec, mode, use_allowed_websites),
+        args=(app, job_id, computer_spec, mode, use_allowed_websites, model),
         name=f"computer-finder-{job_id[:8]}",
         daemon=True,
     ).start()
@@ -99,6 +101,7 @@ def _run_job(
     computer_spec: str,
     mode: str,
     use_allowed_websites: bool,
+    model: str | None,
 ) -> None:
     _update(job_id, status="running", phase="Planning research", started_at=_now_iso())
     progress = _progress_recorder(job_id)
@@ -110,6 +113,7 @@ def _run_job(
                 progress_callback=progress,
                 mode=mode,
                 use_allowed_websites=use_allowed_websites,
+                model=model,
             )
         progress({"kind": "phase", "status": "returned", "label": "Research answer completed", "phase": "Complete"})
         _update(

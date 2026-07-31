@@ -3,7 +3,7 @@
 {% block content %}
 <section class="hero-card mb-4">
   <div>
-    <span class="eyebrow">Conversational Web Research</span>
+    <span class="eyebrow">Conversational Product Research</span>
     <h1 class="display-title" id="research-page-title">Computer Finder</h1>
     <p class="hero-copy mb-0" id="research-page-description">Research selected tender items, then refine the recommendation with follow-up requirements.</p>
   </div>
@@ -37,22 +37,6 @@
   </div>
   <div class="card-body p-0">
     <div class="computer-finder-requirements border-bottom p-3">
-      <div class="row g-3 align-items-end mb-3">
-        <div class="col-md-6">
-          <label class="form-label fw-semibold" for="research-mode">Research mode</label>
-          <select class="form-select" id="research-mode">
-            <option value="computer">Computer Finder</option>
-            <option value="general">General Search</option>
-          </select>
-        </div>
-        <div class="col-md-6">
-          <div class="form-check form-switch research-domain-toggle d-none" id="general-domain-toggle-wrap">
-            <input class="form-check-input" type="checkbox" role="switch" id="general-use-allowed-websites">
-            <label class="form-check-label fw-semibold" for="general-use-allowed-websites">Restrict to allowed websites</label>
-            <div class="form-text">Off searches the wider web while still excluding blocked websites.</div>
-          </div>
-        </div>
-      </div>
       <label class="form-label fw-semibold" id="research-request-label" for="computer-finder-base-spec">Starting requirements</label>
       <textarea class="form-control" id="computer-finder-base-spec" rows="6" placeholder="Describe the products, quantities, technical requirements, warranty and budget.">{{ selected_spec }}</textarea>
       {% if selected_items or selected_sub_items %}
@@ -193,13 +177,10 @@
     <hr class="my-4">
     <form id="computer-finder-prompts-form" data-prompts-url="{{ url_for('computer_finder.update_prompts') }}">
       <div class="mb-3">
-        <h2 class="h5 mb-1">Research instructions</h2>
-        <p class="text-muted mb-0">Computer Finder and General Search use separate live instructions for planning and answering. Template fields are filled automatically.</p>
+        <h2 class="h5 mb-1">Computer Finder instructions</h2>
+        <p class="text-muted mb-0">Live instructions for planning hardware searches and turning evidence into recommendations.</p>
       </div>
       {% for prompt in finder_prompts %}
-      {% if loop.first or ('general_search' in prompt.key and 'general_search' not in finder_prompts[loop.index0 - 1].key) %}
-      <h3 class="h6 mt-4">{{ 'General Search' if 'general_search' in prompt.key else 'Computer Finder' }}</h3>
-      {% endif %}
       <div class="mb-3">
         <label class="form-label fw-semibold" for="computer-finder-prompt-{{ prompt.key }}">{{ prompt.title }}</label>
         <div class="form-text mb-2">{{ prompt.description }}</div>
@@ -212,7 +193,7 @@
         >{{ prompt.content }}</textarea>
       </div>
       {% endfor %}
-      <button class="btn btn-outline-primary" id="computer-finder-prompts-submit" type="submit">Save Research Instructions</button>
+      <button class="btn btn-outline-primary" id="computer-finder-prompts-submit" type="submit">Save Finder Instructions</button>
       <span class="small text-muted ms-2" id="computer-finder-prompts-status"></span>
     </form>
   </div>

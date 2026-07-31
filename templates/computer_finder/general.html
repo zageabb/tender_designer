@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}General Search | Tender Designer{% endblock %}
+{% block content %}
+<section
+  class="research-chat-shell"
+  id="computer-finder-workspace"
+  data-search-url="{{ url_for('computer_finder.search') }}"
+  data-search-status-url="{{ url_for('computer_finder.search_status', job_id='JOB_ID') }}"
+  data-models-url="{{ url_for('computer_finder.available_models') }}"
+  data-storage-key="general-search-conversations-v2"
+  data-initial-query="{{ selected_spec|e }}"
+  data-default-model="{{ finder_settings.computer_finder_model|e }}"
+>
+  <aside class="research-history-sidebar">
+    <div class="research-sidebar-header">
+      <div>
+        <span class="eyebrow text-dark">Web research</span>
+        <h1 class="h4 mb-0">General Search</h1>
+      </div>
+      <button class="btn btn-primary btn-sm" id="research-new-chat" type="button">New chat</button>
+    </div>
+    <div class="research-history-list" id="research-history-list" aria-label="Search conversations"></div>
+  </aside>
+
+  <div class="research-chat-main">
+    <header class="research-chat-header">
+      <div class="min-w-0">
+        <div class="finder-message-label mb-1">Active conversation</div>
+        <h2 class="h5 mb-0 text-truncate" id="research-active-title">New research</h2>
+      </div>
+      <div class="research-chat-controls">
+        <div>
+          <label class="form-label small mb-1" for="research-model">Model</label>
+          <select class="form-select form-select-sm" id="research-model">
+            <option value="{{ finder_settings.computer_finder_model }}">{{ finder_settings.computer_finder_model }}</option>
+          </select>
+        </div>
+        <div class="form-check form-switch mb-1">
+          <input class="form-check-input" type="checkbox" role="switch" id="general-use-allowed-websites">
+          <label class="form-check-label small" for="general-use-allowed-websites">Allowed sites only</label>
+        </div>
+      </div>
+    </header>
+
+    <details class="research-activity-drawer">
+      <summary>
+        <span><strong id="computer-finder-runtime-phase">Ready</strong> · <span id="computer-finder-runtime-elapsed">0:00</span></span>
+        <span class="small text-muted"><span id="computer-finder-count-returned">0</span> sources retained</span>
+      </summary>
+      <div class="computer-finder-runtime-counts">
+        <div><strong id="computer-finder-count-initiated">0</strong><span>Initiated</span></div>
+        <div><strong id="computer-finder-count-returned-detail">0</strong><span>Returned</span></div>
+        <div><strong id="computer-finder-count-failed">0</strong><span>Failed</span></div>
+      </div>
+      <div id="computer-finder-runtime-events" class="computer-finder-runtime-events">
+        <p class="small text-muted mb-0">Research activity will appear here after you send a question.</p>
+      </div>
+    </details>
+
+    <div id="computer-finder-conversation" class="computer-finder-conversation research-chat-conversation" aria-live="polite"></div>
+
+    <form id="computer-finder-form" class="research-chat-composer">
+      <textarea class="form-control" id="computer-finder-instruction" rows="3" placeholder="Ask anything that benefits from current web research…"></textarea>
+      <div class="research-composer-footer">
+        <span class="small text-muted" id="research-context-summary">0 messages in context</span>
+        <button class="btn btn-primary" id="computer-finder-submit" type="submit">Search</button>
+      </div>
+    </form>
+  </div>
+</section>
+
+<div
+  id="computer-finder-save-actions"
+  class="card glass-panel mt-4 d-none"
+  data-export-url="{{ url_for('computer_finder.export_result') }}"
+  data-attach-url="{{ url_for('computer_finder.attach_result_to_tender') }}"
+>
+  <div class="card-header">Use latest research result</div>
+  <div class="card-body">
+    <div class="row g-2 align-items-end">
+      <div class="col-md-3"><button class="btn btn-outline-primary w-100" id="computer-finder-download" type="button">Download .md</button></div>
+      <div class="col-md-6">
+        <label class="form-label fw-semibold" for="computer-finder-tender">Save result to tender</label>
+        <select class="form-select" id="computer-finder-tender">
+          <option value="">Choose a tender</option>
+          {% for available_tender in tenders %}
+          <option value="{{ available_tender.id }}" {% if tender and available_tender.id == tender.id %}selected{% endif %}>{{ available_tender.tender_number }}{% if available_tender.title %} — {{ available_tender.title }}{% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3"><button class="btn btn-primary w-100" id="computer-finder-attach" type="button">Save To Tender</button></div>
+    </div>
+    <div class="small mt-2" id="computer-finder-save-status"></div>
+  </div>
+</div>
+
+<details class="card glass-panel mt-4" id="research-settings">
+  <summary class="card-header computer-finder-settings-summary">Search settings</summary>
+  <div class="card-body">
+    <form id="computer-finder-settings-form" data-settings-url="{{ url_for('computer_finder.update_settings') }}">
+      <div class="mb-4">
+        <h2 class="h5 mb-1">Stored instructions and persona</h2>
+        <p class="text-muted">Applied to every answer, alongside the evidence and citation safeguards.</p>
+        <textarea class="form-control" id="general-search-instructions" name="general_search_instructions" rows="6">{{ finder_settings.general_search_instructions }}</textarea>
+      </div>
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label class="form-label fw-semibold" for="computer-finder-provider">Search provider</label>
+          <select class="form-select" id="computer-finder-provider" name="computer_finder_search_provider">
+            <option value="ollama_agent" {% if finder_settings.computer_finder_search_provider == "ollama_agent" %}selected{% endif %}>Ollama research agent</option>
+            <option value="direct" {% if finder_settings.computer_finder_search_provider == "direct" %}selected{% endif %}>Legacy direct search</option>
+          </select>
+        </div>
+        <div class="col-md-4"><label class="form-label fw-semibold" for="computer-finder-search-backend">Search backend</label><input class="form-control" id="computer-finder-search-backend" name="computer_finder_search_backend" value="{{ finder_settings.computer_finder_search_backend }}"></div>
+        <div class="col-md-4"><label class="form-label fw-semibold" for="computer-finder-search-rounds">Research rounds</label><input class="form-control" id="computer-finder-search-rounds" name="computer_finder_max_search_rounds" type="number" min="1" max="5" value="{{ finder_settings.computer_finder_max_search_rounds }}"></div>
+        <div class="col-md-6"><label class="form-label fw-semibold" for="computer-finder-allowed-domains">Allowed websites</label><textarea class="form-control font-monospace" id="computer-finder-allowed-domains" name="computer_finder_allowed_domains" rows="6">{{ finder_settings.computer_finder_allowed_domains }}</textarea></div>
+        <div class="col-md-6"><label class="form-label fw-semibold" for="computer-finder-blocked-domains">Blocked websites</label><textarea class="form-control font-monospace" id="computer-finder-blocked-domains" name="computer_finder_blocked_domains" rows="6">{{ finder_settings.computer_finder_blocked_domains }}</textarea></div>
+        <div class="col-md-4"><label class="form-label fw-semibold" for="computer-finder-model">Default model</label><input class="form-control" id="computer-finder-model" name="computer_finder_model" value="{{ finder_settings.computer_finder_model }}"></div>
+        <div class="col-md-4"><label class="form-label fw-semibold" for="computer-finder-results-per-domain">Results per query</label><input class="form-control" id="computer-finder-results-per-domain" name="computer_finder_results_per_domain" value="{{ finder_settings.computer_finder_results_per_domain }}"></div>
+        <div class="col-md-4"><label class="form-label fw-semibold" for="computer-finder-pages-to-read">Pages to read</label><input class="form-control" id="computer-finder-pages-to-read" name="computer_finder_max_pages_to_read" type="number" min="1" max="100" value="{{ finder_settings.computer_finder_max_pages_to_read }}"></div>
+        <div class="col-md-4"><label class="form-label fw-semibold" for="computer-finder-country">Country</label><input class="form-control" id="computer-finder-country" name="computer_finder_market_country" value="{{ finder_settings.computer_finder_market_country }}"></div>
+        <div class="col-md-4"><label class="form-label fw-semibold" for="computer-finder-region">Region</label><input class="form-control" id="computer-finder-region" name="computer_finder_market_region" value="{{ finder_settings.computer_finder_market_region }}"></div>
+        <div class="col-md-4"><label class="form-label fw-semibold" for="computer-finder-city">City</label><input class="form-control" id="computer-finder-city" name="computer_finder_market_city" value="{{ finder_settings.computer_finder_market_city }}"></div>
+      </div>
+      <button class="btn btn-outline-primary mt-3" id="computer-finder-settings-submit" type="submit">Save Search Settings</button>
+      <span class="small text-muted ms-2" id="computer-finder-domain-summary">Active: {{ allowed_domains|length }} allowed, {{ blocked_domains|length }} blocked.</span>
+    </form>
+
+    <hr class="my-4">
+    <form id="computer-finder-prompts-form" data-prompts-url="{{ url_for('computer_finder.update_prompts') }}">
+      <div class="mb-3"><h2 class="h5 mb-1">Search instructions</h2><p class="text-muted mb-0">Advanced planning and evidence-synthesis prompts used by General Search.</p></div>
+      {% for prompt in finder_prompts %}
+      <div class="mb-3">
+        <label class="form-label fw-semibold" for="computer-finder-prompt-{{ prompt.key }}">{{ prompt.title }}</label>
+        <div class="form-text mb-2">{{ prompt.description }}</div>
+        <textarea class="form-control font-monospace" id="computer-finder-prompt-{{ prompt.key }}" name="{{ prompt.key }}" rows="14" spellcheck="false">{{ prompt.content }}</textarea>
+      </div>
+      {% endfor %}
+      <button class="btn btn-outline-primary" id="computer-finder-prompts-submit" type="submit">Save Search Instructions</button>
+      <span class="small text-muted ms-2" id="computer-finder-prompts-status"></span>
+    </form>
+  </div>
+</details>
+{% endblock %}
+
+{% block scripts %}<script src="{{ url_for('static', filename='js/general_search.js') }}"></script>{% endblock %}

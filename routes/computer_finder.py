@@ -13,6 +13,7 @@ from services.computer_finder_service import (
 )
 from services.computer_finder_jobs import create_computer_finder_job, get_computer_finder_job
 from services.file_storage import save_tender_bytes
+from services.ollama_client import OllamaClient
 from services.prompt_service import PROMPT_FILES, ensure_prompt_files, get_prompt_content, save_prompt_content
 from services.settings_service import DEFAULT_SETTINGS, ensure_default_settings, get_setting
 
@@ -32,11 +33,15 @@ COMPUTER_FINDER_SETTING_KEYS = [
     "computer_finder_market_country",
     "computer_finder_market_region",
     "computer_finder_market_city",
+    "general_search_instructions",
 ]
 
 COMPUTER_FINDER_PROMPT_KEYS = [
     "computer_finder_query_planning",
     "computer_finder_search",
+]
+
+GENERAL_SEARCH_PROMPT_KEYS = [
     "general_search_query_planning",
     "general_search_answer",
 ]
@@ -72,6 +77,31 @@ def index():
     )
 
 
+@computer_finder_bp.route("/general", methods=["GET"])
+def general_search():
+    ensure_default_settings(db)
+    ensure_prompt_files()
+    return render_template(
+        "computer_finder/general.html",
+        finder_settings=_current_settings(),
+        allowed_domains=parse_domain_list(get_setting("computer_finder_allowed_domains")),
+        blocked_domains=parse_domain_list(get_setting("computer_finder_blocked_domains")),
+        finder_prompts=[
+            {
+                "key": key,
+                "title": PROMPT_FILES[key]["title"],
+                "description": PROMPT_FILES[key]["description"],
+                "content": get_prompt_content(key),
+            }
+            for key in GENERAL_SEARCH_PROMPT_KEYS
+        ],
+        tenders=Tender.query.order_by(Tender.updated_at.desc()).limit(200).all(),
+        tender=None,
+        selected_spec="",
+        chat_context={"page": "general_search"},
+    )
+
+
 @computer_finder_bp.route("/tender/<int:tender_id>/select", methods=["GET"])
 def select_tender_items(tender_id: int):
     tender = Tender.query.get_or_404(tender_id)
@@ -88,15 +118,14 @@ def search():
     computer_spec = _conversation_search_spec(payload)
     mode = "general" if payload.get("mode") == "general" else "computer"
     use_allowed_websites = mode == "computer" or bool(payload.get("use_allowed_websites"))
+    model = str(payload.get("model") or "").strip()[:200]
     if not computer_spec:
         message = "Enter a research question before searching." if mode == "general" else "Enter a computer specification before searching."
         return jsonify({"ok": False, "message": message}), 400
-    job = create_computer_finder_job(
-        current_app._get_current_object(),
-        computer_spec,
-        mode=mode,
-        use_allowed_websites=use_allowed_websites,
-    )
+    job_options = {"mode": mode, "use_allowed_websites": use_allowed_websites}
+    if model:
+        job_options["model"] = model
+    job = create_computer_finder_job(current_app._get_current_object(), computer_spec, **job_options)
     return jsonify({"ok": True, "job": job}), 202
 
 
@@ -106,6 +135,20 @@ def search_status(job_id: str):
     if job is None:
         return jsonify({"ok": False, "message": "Computer Finder job not found."}), 404
     return jsonify({"ok": True, "job": job})
+
+
+@computer_finder_bp.route("/models", methods=["GET"])
+def available_models():
+    configured_model = get_setting("computer_finder_model") or ""
+    try:
+        models = OllamaClient(get_setting("ollama_url") or "").list_models()
+    except Exception as exc:
+        models = [configured_model] if configured_model else []
+        return jsonify({"ok": True, "models": models, "warning": f"Could not refresh Ollama models: {exc}"})
+    clean_models = list(dict.fromkeys(model for model in models if model))
+    if configured_model and configured_model not in clean_models:
+        clean_models.insert(0, configured_model)
+    return jsonify({"ok": True, "models": clean_models})
 
 
 def _selected_tender_lines(tender: Tender | None) -> tuple[list[TenderItem], list[TenderSubItem]]:
@@ -157,19 +200,26 @@ def _conversation_search_spec(payload: dict) -> str:
     base_spec = str(payload.get("base_spec") or payload.get("spec") or "").strip()[:20000]
     instruction = str(payload.get("instruction") or "").strip()[:5000]
     history_lines: list[str] = []
-    for entry in (payload.get("history") or [])[-6:]:
+    history_entries: list[str] = []
+    history_size = 0
+    for entry in reversed(payload.get("history") or []):
         if not isinstance(entry, dict):
             continue
-        role = "User" if entry.get("role") == "user" else "Previous recommendation"
-        content = str(entry.get("content") or "").strip()[:6000]
+        role = "User" if entry.get("role") == "user" else "Assistant"
+        content = str(entry.get("content") or "").strip()[:12000]
         if content:
-            history_lines.append(f"{role}: {content}")
+            line = f"{role}: {content}"
+            if history_size + len(line) > 100000:
+                break
+            history_entries.append(line)
+            history_size += len(line)
+    history_lines = list(reversed(history_entries))
     parts = [base_spec]
     if history_lines:
         parts.extend(["Previous search conversation:", *history_lines])
     if instruction:
         parts.extend(["Current refinement request:", instruction])
-    return "\n\n".join(part for part in parts if part).strip()[:45000]
+    return "\n\n".join(part for part in parts if part).strip()[:125000]
 
 
 def _result_payload() -> tuple[str, str, list[dict], str]:
@@ -282,6 +332,8 @@ def update_settings():
     payload = request.get_json(force=True)
     settings = {setting.key: setting for setting in AppSetting.query.all()}
     for key in COMPUTER_FINDER_SETTING_KEYS:
+        if key not in payload:
+            continue
         record = settings.get(key)
         if record is None:
             default = DEFAULT_SETTINGS[key]
@@ -319,11 +371,15 @@ def update_prompts():
     if not isinstance(prompts, dict):
         return jsonify({"ok": False, "message": "No Finder instructions were supplied."}), 400
 
-    missing_keys = [key for key in COMPUTER_FINDER_PROMPT_KEYS if not str(prompts.get(key) or "").strip()]
+    known_keys = set(COMPUTER_FINDER_PROMPT_KEYS + GENERAL_SEARCH_PROMPT_KEYS)
+    supplied_keys = [key for key in known_keys if key in prompts]
+    missing_keys = [key for key in supplied_keys if not str(prompts.get(key) or "").strip()]
+    if not supplied_keys:
+        return jsonify({"ok": False, "message": "No recognized research instructions were supplied."}), 400
     if missing_keys:
         return jsonify({"ok": False, "message": "All research instruction fields are required."}), 400
 
-    for key in COMPUTER_FINDER_PROMPT_KEYS:
+    for key in supplied_keys:
         save_prompt_content(key, str(prompts[key]))
     return jsonify({"ok": True, "message": "Research instructions saved."})
 
