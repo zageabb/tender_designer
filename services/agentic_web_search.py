@@ -22,6 +22,7 @@ SEARCH_HEADERS = {
 MAX_REDIRECTS = 5
 MAX_RESPONSE_BYTES = 5 * 1024 * 1024
 SEARCH_CACHE_SECONDS = 15 * 60
+MAX_RESEARCH_PAGES = 100
 _search_cache: dict[tuple, tuple[float, list["SearchResult"]]] = {}
 _search_cache_lock = threading.Lock()
 
@@ -136,7 +137,7 @@ class OllamaWebResearchAgent:
         self.allowed_domains = allowed_domains
         self.blocked_domains = blocked_domains
         self.max_rounds = max(1, min(max_rounds, 5))
-        self.max_pages = max(1, min(max_pages, 20))
+        self.max_pages = max(1, min(max_pages, MAX_RESEARCH_PAGES))
         self.results_per_query = max(2, min(results_per_query, 10))
         self.progress_callback = progress_callback or (lambda _event: None)
 

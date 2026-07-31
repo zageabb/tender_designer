@@ -9,7 +9,12 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 import requests
 
-from services.agentic_web_search import DDGSSearchProvider, OllamaWebResearchAgent, WebPageReader
+from services.agentic_web_search import (
+    DDGSSearchProvider,
+    MAX_RESEARCH_PAGES,
+    OllamaWebResearchAgent,
+    WebPageReader,
+)
 from services.ollama_client import OllamaClient
 from services.prompt_service import render_prompt
 from services.settings_service import get_setting, get_task_model
@@ -96,7 +101,12 @@ def get_computer_finder_config() -> ComputerFinderConfig:
         ollama_url=ollama_url,
         model=(get_setting("computer_finder_model") or get_task_model("chat_answering") or "llama3.2").strip(),
         search_results_per_domain=_int_setting("computer_finder_results_per_domain", 3, minimum=1, maximum=8),
-        max_pages_to_read=_int_setting("computer_finder_max_pages_to_read", 8, minimum=1, maximum=20),
+        max_pages_to_read=_int_setting(
+            "computer_finder_max_pages_to_read",
+            8,
+            minimum=1,
+            maximum=MAX_RESEARCH_PAGES,
+        ),
         allowed_domains=allowed_domains,
         blocked_domains=parse_domain_list(get_setting("computer_finder_blocked_domains")),
         country=(get_setting("computer_finder_market_country") or "").strip().upper(),
