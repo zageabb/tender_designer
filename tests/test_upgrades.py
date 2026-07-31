@@ -197,6 +197,7 @@ class UpgradeTestCase(unittest.TestCase):
         self.assertIn("16GB RAM, 512GB SSD, Windows 11 Pro", body)
         self.assertIn("Three-year onsite warranty", body)
         self.assertNotIn('<aside class="chat-panel', body)
+        self.assertIn('class="layout-grid layout-grid-full"', body)
         self.assertIn("Live Research Activity", body)
         self.assertIn(f'<option value="{tender_id}" selected>', body)
 

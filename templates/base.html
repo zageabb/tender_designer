@@ -45,7 +45,7 @@
           </div>
         {% endif %}
       {% endwith %}
-      <div class="layout-grid">
+      <div class="layout-grid{% if not current_user.is_authenticated or (chat_context or {}).get('page') in ['computer_finder', 'computer_finder_selection'] %} layout-grid-full{% endif %}">
         <main>
           {% block content %}{% endblock %}
         </main>

@@ -26,6 +26,10 @@ body {
   align-items: start;
 }
 
+.layout-grid-full {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .site-shell {
   min-height: 100vh;
 }
@@ -739,9 +743,28 @@ body {
 .computer-finder-conversation {
   min-height: 24rem;
   max-height: 68vh;
-  overflow-y: auto;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  scrollbar-color: rgba(17, 58, 82, 0.45) rgba(17, 58, 82, 0.08);
+  scrollbar-width: thin;
   padding: 1.25rem;
   background: linear-gradient(180deg, rgba(239, 246, 248, 0.72), rgba(255, 255, 255, 0.86));
+}
+
+.computer-finder-conversation::-webkit-scrollbar {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
+.computer-finder-conversation::-webkit-scrollbar-track {
+  background: rgba(17, 58, 82, 0.08);
+}
+
+.computer-finder-conversation::-webkit-scrollbar-thumb {
+  border: 0.2rem solid transparent;
+  border-radius: 999px;
+  background: rgba(17, 58, 82, 0.45);
+  background-clip: padding-box;
 }
 
 .finder-message {
@@ -753,9 +776,14 @@ body {
 }
 
 .finder-message-assistant {
+  width: 100%;
   margin-right: auto;
   background: #fff;
   border: 1px solid rgba(17, 58, 82, 0.1);
+}
+
+.computer-finder-conversation .markdown-table-wrap {
+  scrollbar-gutter: stable;
 }
 
 .finder-message-user {
