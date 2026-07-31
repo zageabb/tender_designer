@@ -229,7 +229,7 @@ class UpgradeTestCase(unittest.TestCase):
             "steps": [],
             "events": [{"kind": "site", "status": "returned", "label": "Supplier"}],
         }
-        with patch("routes.computer_finder.create_computer_finder_job", return_value=queued_job):
+        with patch("routes.computer_finder.create_computer_finder_job", return_value=queued_job) as create_job:
             response = self.client.post(
                 "/computer-finder/search",
                 json={"base_spec": "Business laptop"},
@@ -237,6 +237,12 @@ class UpgradeTestCase(unittest.TestCase):
             )
         self.assertEqual(response.status_code, 202)
         self.assertEqual(response.get_json()["job"]["id"], "job-123")
+        create_job.assert_called_once_with(
+            self.app,
+            "Business laptop",
+            mode="computer",
+            use_allowed_websites=True,
+        )
 
         with patch("routes.computer_finder.get_computer_finder_job", return_value=completed_job):
             status = self.client.get("/computer-finder/search/job-123")
@@ -250,12 +256,16 @@ class UpgradeTestCase(unittest.TestCase):
         self.assertEqual(finder.status_code, 200)
         self.assertIn("Computer Finder Query Planning", body)
         self.assertIn("Computer Finder Recommendation", body)
-        self.assertIn("Save Finder Instructions", body)
+        self.assertIn("General Search Query Planning", body)
+        self.assertIn("General Search Answer", body)
+        self.assertIn("Save Research Instructions", body)
 
         token = self._csrf_token("/computer-finder/")
         prompts = {
             "computer_finder_query_planning": "Plan searches using {{computer_spec}}",
             "computer_finder_search": "Recommend products using {{search_results}}",
+            "general_search_query_planning": "Plan research using {{search_request}}",
+            "general_search_answer": "Answer using {{search_results}}",
         }
         with patch("routes.computer_finder.save_prompt_content") as save_prompt:
             response = self.client.post(
@@ -269,7 +279,31 @@ class UpgradeTestCase(unittest.TestCase):
             [
                 call("computer_finder_query_planning", prompts["computer_finder_query_planning"]),
                 call("computer_finder_search", prompts["computer_finder_search"]),
+                call("general_search_query_planning", prompts["general_search_query_planning"]),
+                call("general_search_answer", prompts["general_search_answer"]),
             ],
+        )
+
+    def test_general_search_can_disable_allowed_website_filter(self) -> None:
+        self._login()
+        token = self._csrf_token("/computer-finder/")
+        queued_job = {"id": "general-job", "status": "queued", "events": []}
+        with patch("routes.computer_finder.create_computer_finder_job", return_value=queued_job) as create_job:
+            response = self.client.post(
+                "/computer-finder/search",
+                json={
+                    "base_spec": "Compare approaches to heat-pump policy",
+                    "mode": "general",
+                    "use_allowed_websites": False,
+                },
+                headers={"X-CSRFToken": token},
+            )
+        self.assertEqual(response.status_code, 202)
+        create_job.assert_called_once_with(
+            self.app,
+            "Compare approaches to heat-pump policy",
+            mode="general",
+            use_allowed_websites=False,
         )
 
     def test_csrf_rejects_unprotected_mutation(self) -> None:

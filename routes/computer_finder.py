@@ -37,6 +37,8 @@ COMPUTER_FINDER_SETTING_KEYS = [
 COMPUTER_FINDER_PROMPT_KEYS = [
     "computer_finder_query_planning",
     "computer_finder_search",
+    "general_search_query_planning",
+    "general_search_answer",
 ]
 
 
@@ -84,9 +86,17 @@ def select_tender_items(tender_id: int):
 def search():
     payload = request.get_json(force=True)
     computer_spec = _conversation_search_spec(payload)
+    mode = "general" if payload.get("mode") == "general" else "computer"
+    use_allowed_websites = mode == "computer" or bool(payload.get("use_allowed_websites"))
     if not computer_spec:
-        return jsonify({"ok": False, "message": "Enter a computer specification before searching."}), 400
-    job = create_computer_finder_job(current_app._get_current_object(), computer_spec)
+        message = "Enter a research question before searching." if mode == "general" else "Enter a computer specification before searching."
+        return jsonify({"ok": False, "message": message}), 400
+    job = create_computer_finder_job(
+        current_app._get_current_object(),
+        computer_spec,
+        mode=mode,
+        use_allowed_websites=use_allowed_websites,
+    )
     return jsonify({"ok": True, "job": job}), 202
 
 
@@ -162,7 +172,7 @@ def _conversation_search_spec(payload: dict) -> str:
     return "\n\n".join(part for part in parts if part).strip()[:45000]
 
 
-def _result_payload() -> tuple[str, str, list[dict]]:
+def _result_payload() -> tuple[str, str, list[dict], str]:
     payload = request.get_json(force=True)
     computer_spec = str(payload.get("spec") or "").strip()[:20000]
     answer = str(payload.get("message") or "").strip()[:100000]
@@ -175,21 +185,23 @@ def _result_payload() -> tuple[str, str, list[dict]]:
         if source_url:
             sources.append({"title": title or source_url, "url": source_url})
     if not computer_spec or not answer:
-        raise ValueError("Run a computer search before saving its result.")
-    return computer_spec, answer, sources
+        raise ValueError("Run a research search before saving its result.")
+    mode = "general" if payload.get("mode") == "general" else "computer"
+    return computer_spec, answer, sources, mode
 
 
-def _result_markdown(computer_spec: str, answer: str, sources: list[dict]) -> str:
+def _result_markdown(computer_spec: str, answer: str, sources: list[dict], mode: str = "computer") -> str:
+    general = mode == "general"
     lines = [
-        "# Computer Finder Result",
+        "# General Search Result" if general else "# Computer Finder Result",
         "",
         f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}",
         "",
-        "## Requested Specification",
+        "## Research Request" if general else "## Requested Specification",
         "",
         computer_spec,
         "",
-        "## Recommendation",
+        "## Answer" if general else "## Recommendation",
         "",
         answer,
     ]
@@ -200,22 +212,23 @@ def _result_markdown(computer_spec: str, answer: str, sources: list[dict]) -> st
     return "\n".join(lines).strip() + "\n"
 
 
-def _result_filename() -> str:
-    return f"computer_finder_result_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.md"
+def _result_filename(mode: str = "computer") -> str:
+    prefix = "general_search_result" if mode == "general" else "computer_finder_result"
+    return f"{prefix}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.md"
 
 
 @computer_finder_bp.route("/export", methods=["POST"])
 def export_result():
     try:
-        computer_spec, answer, sources = _result_payload()
+        computer_spec, answer, sources, mode = _result_payload()
     except ValueError as exc:
         return jsonify({"ok": False, "message": str(exc)}), 400
-    content = _result_markdown(computer_spec, answer, sources).encode("utf-8")
+    content = _result_markdown(computer_spec, answer, sources, mode).encode("utf-8")
     return send_file(
         BytesIO(content),
         mimetype="text/markdown",
         as_attachment=True,
-        download_name=_result_filename(),
+        download_name=_result_filename(mode),
     )
 
 
@@ -231,14 +244,14 @@ def attach_result_to_tender():
     if tender is None:
         return jsonify({"ok": False, "message": "The selected tender could not be found."}), 404
     try:
-        computer_spec, answer, sources = _result_payload()
+        computer_spec, answer, sources, mode = _result_payload()
     except ValueError as exc:
         return jsonify({"ok": False, "message": str(exc)}), 400
-    content_text = _result_markdown(computer_spec, answer, sources)
+    content_text = _result_markdown(computer_spec, answer, sources, mode)
     original_name, stored_name, saved_path = save_tender_bytes(
         current_app.config["DATA_DIR"],
         tender.id,
-        _result_filename(),
+        _result_filename(mode),
         content_text.encode("utf-8"),
     )
     document = TenderDocument(
@@ -249,14 +262,14 @@ def attach_result_to_tender():
         file_type=Path(original_name).suffix.lstrip(".") or "md",
         extracted_text=content_text,
         processed=True,
-        processing_notes="Saved from Computer Finder result.",
+        processing_notes="Saved from General Search result." if mode == "general" else "Saved from Computer Finder result.",
     )
     db.session.add(document)
     db.session.commit()
     return jsonify(
         {
             "ok": True,
-            "message": f"Saved Computer Finder result to tender {tender.tender_number}.",
+            "message": f"Saved {'General Search' if mode == 'general' else 'Computer Finder'} result to tender {tender.tender_number}.",
             "document_id": document.id,
             "tender_url": url_for("tenders.detail_tender", tender_id=tender.id, _anchor="documents"),
         }
@@ -308,11 +321,11 @@ def update_prompts():
 
     missing_keys = [key for key in COMPUTER_FINDER_PROMPT_KEYS if not str(prompts.get(key) or "").strip()]
     if missing_keys:
-        return jsonify({"ok": False, "message": "Both Finder instruction fields are required."}), 400
+        return jsonify({"ok": False, "message": "All research instruction fields are required."}), 400
 
     for key in COMPUTER_FINDER_PROMPT_KEYS:
         save_prompt_content(key, str(prompts[key]))
-    return jsonify({"ok": True, "message": "Computer Finder instructions saved."})
+    return jsonify({"ok": True, "message": "Research instructions saved."})
 
 
 def _current_settings() -> dict:

@@ -7,12 +7,44 @@ const computerFinderSettingsForm = document.getElementById("computer-finder-sett
 const computerFinderPromptsForm = document.getElementById("computer-finder-prompts-form");
 const computerFinderSaveActions = document.getElementById("computer-finder-save-actions");
 const computerFinderSaveStatus = document.getElementById("computer-finder-save-status");
+const researchMode = document.getElementById("research-mode");
+const generalUseAllowedWebsites = document.getElementById("general-use-allowed-websites");
 let computerFinderHistory = [];
 let latestComputerFinderResult = null;
 let activeComputerFinderJobId = null;
 let activeComputerFinderSpec = "";
 let computerFinderPollTimer = null;
 let computerFinderWorkingMessage = null;
+
+function currentResearchMode() {
+  return researchMode?.value === "general" ? "general" : "computer";
+}
+
+function researchModeLabel() {
+  return currentResearchMode() === "general" ? "General Search" : "Computer Finder";
+}
+
+function conversationStorageKey() {
+  return `${computerFinderWorkspace.dataset.storageKey}:${currentResearchMode()}`;
+}
+
+function updateResearchModeUi() {
+  const general = currentResearchMode() === "general";
+  document.getElementById("research-page-title").textContent = general ? "General Search" : "Computer Finder";
+  document.getElementById("research-page-description").textContent = general
+    ? "Research any topic across the web, then refine the sourced answer through follow-up questions."
+    : "Research selected tender items, then refine the recommendation with follow-up requirements.";
+  document.getElementById("general-domain-toggle-wrap")?.classList.toggle("d-none", !general);
+  document.getElementById("research-request-label").textContent = general ? "Research question" : "Starting requirements";
+  computerFinderBaseSpec.placeholder = general
+    ? "Ask a question or describe the topic, scope, timeframe, and output you need."
+    : "Describe the products, quantities, technical requirements, warranty and budget.";
+  computerFinderInstruction.placeholder = general
+    ? "Example: Focus on UK sources published in the last two years and compare the main viewpoints."
+    : "Example: Prioritise models under £900 with a three-year onsite warranty.";
+  const submitButton = document.getElementById("computer-finder-submit");
+  if (submitButton && !submitButton.disabled) submitButton.textContent = general ? "Search The Web" : "Search Selected Items";
+}
 
 function renderComputerFinderMarkdown(text) {
   if (typeof renderMarkdown === "function") return renderMarkdown(text);
@@ -29,7 +61,7 @@ function appendFinderMessage(role, content, sources = [], steps = []) {
   if (!computerFinderConversation) return;
   const message = document.createElement("article");
   message.className = `finder-message finder-message-${role}`;
-  const label = role === "user" ? "You" : "Computer Finder";
+  const label = role === "user" ? "You" : researchModeLabel();
   const sourcesMarkup = sources.length
     ? `<div class="computer-finder-sources mt-3"><strong>Sources</strong><ol>${sources
         .map((source, index) => `<li><a href="${escapeHtml(source.url || "#")}" target="_blank" rel="noopener noreferrer">[${index + 1}] ${escapeHtml(source.title || source.url || "Source")}</a></li>`)
@@ -52,13 +84,13 @@ function saveConversationState() {
     activeJobId: activeComputerFinderJobId,
     activeJobSpec: activeComputerFinderSpec,
   };
-  sessionStorage.setItem(computerFinderWorkspace.dataset.storageKey, JSON.stringify(state));
+  sessionStorage.setItem(conversationStorageKey(), JSON.stringify(state));
 }
 
 function restoreConversationState() {
   if (!computerFinderWorkspace) return;
   try {
-    const raw = sessionStorage.getItem(computerFinderWorkspace.dataset.storageKey);
+    const raw = sessionStorage.getItem(conversationStorageKey());
     if (!raw) return;
     const state = JSON.parse(raw);
     if (state.baseSpec && computerFinderBaseSpec && !computerFinderBaseSpec.value.trim()) {
@@ -72,7 +104,7 @@ function restoreConversationState() {
     if (latestComputerFinderResult) computerFinderSaveActions?.classList.remove("d-none");
     if (activeComputerFinderJobId) resumeComputerFinderJob(activeComputerFinderJobId);
   } catch (error) {
-    sessionStorage.removeItem(computerFinderWorkspace.dataset.storageKey);
+    sessionStorage.removeItem(conversationStorageKey());
   }
 }
 
@@ -94,7 +126,7 @@ function setComputerFinderRunning(running) {
     submitButton.textContent = "Researching...";
   } else {
     submitButton.disabled = false;
-    submitButton.textContent = submitButton.dataset.originalText || "Search Selected Items";
+    submitButton.textContent = currentResearchMode() === "general" ? "Search The Web" : "Search Selected Items";
   }
 }
 
@@ -155,6 +187,7 @@ function finishComputerFinderJob(job) {
       spec: activeComputerFinderSpec || computerFinderBaseSpec?.value || "",
       message: answer,
       sources: job.sources || [],
+      mode: currentResearchMode(),
     };
     computerFinderSaveActions?.classList.remove("d-none");
     setComputerFinderSaveStatus("");
@@ -190,7 +223,7 @@ function resumeComputerFinderJob(jobId) {
   if (!computerFinderWorkingMessage) {
     computerFinderWorkingMessage = document.createElement("div");
     computerFinderWorkingMessage.className = "finder-message finder-message-assistant finder-message-working";
-    computerFinderWorkingMessage.innerHTML = '<div class="finder-message-label">Computer Finder</div><div>Research continues in the background. Live activity is shown on the right.</div>';
+    computerFinderWorkingMessage.innerHTML = `<div class="finder-message-label">${researchModeLabel()}</div><div>Research continues in the background. Live activity is shown on the right.</div>`;
     computerFinderConversation.appendChild(computerFinderWorkingMessage);
   }
   pollComputerFinderJob(jobId);
@@ -202,10 +235,12 @@ computerFinderForm?.addEventListener("submit", async (event) => {
   const baseSpec = computerFinderBaseSpec?.value.trim() || "";
   const instruction = computerFinderInstruction?.value.trim() || "";
   if (!baseSpec) {
-    appendFinderMessage("assistant", "Add starting requirements or select tender items before searching.");
+    appendFinderMessage("assistant", currentResearchMode() === "general" ? "Enter a research question before searching." : "Add starting requirements or select tender items before searching.");
     return;
   }
-  const userMessage = instruction || (computerFinderHistory.length ? "Search again using the current requirements." : "Find the best matching products for these requirements.");
+  const userMessage = instruction || (computerFinderHistory.length
+    ? "Search again using the current request."
+    : currentResearchMode() === "general" ? "Research this question." : "Find the best matching products for these requirements.");
   appendFinderMessage("user", userMessage);
   const requestHistory = computerFinderHistory.slice(-6);
   computerFinderHistory.push({ role: "user", content: userMessage });
@@ -215,7 +250,13 @@ computerFinderForm?.addEventListener("submit", async (event) => {
     const response = await fetch(computerFinderWorkspace.dataset.searchUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ base_spec: baseSpec, instruction: userMessage, history: requestHistory }),
+      body: JSON.stringify({
+        base_spec: baseSpec,
+        instruction: userMessage,
+        history: requestHistory,
+        mode: currentResearchMode(),
+        use_allowed_websites: Boolean(generalUseAllowedWebsites?.checked),
+      }),
     });
     const payload = await computerFinderJsonResponse(response);
     if (!response.ok || !payload.ok) throw new Error(payload.message || "Computer search failed.");
@@ -252,7 +293,26 @@ document.getElementById("computer-finder-clear")?.addEventListener("click", () =
     document.getElementById(`computer-finder-count-${status}`).textContent = "0";
   });
   setComputerFinderRunning(false);
-  sessionStorage.removeItem(computerFinderWorkspace.dataset.storageKey);
+  sessionStorage.removeItem(conversationStorageKey());
+});
+
+researchMode?.addEventListener("change", () => {
+  clearTimeout(computerFinderPollTimer);
+  computerFinderPollTimer = null;
+  computerFinderHistory = [];
+  latestComputerFinderResult = null;
+  activeComputerFinderJobId = null;
+  activeComputerFinderSpec = "";
+  computerFinderWorkingMessage = null;
+  computerFinderBaseSpec.value = "";
+  computerFinderInstruction.value = "";
+  computerFinderConversation.innerHTML = "";
+  updateResearchModeUi();
+  appendFinderMessage("assistant", currentResearchMode() === "general"
+    ? "Ask any research question. I’ll search the web, read relevant sources, and produce a cited answer you can refine."
+    : "Tell me what matters most, or start the search using the selected tender requirements.");
+  computerFinderSaveActions?.classList.add("d-none");
+  restoreConversationState();
 });
 
 document.getElementById("computer-finder-download")?.addEventListener("click", async () => {
@@ -365,4 +425,5 @@ computerFinderPromptsForm?.addEventListener("submit", async (event) => {
   }
 });
 
+updateResearchModeUi();
 restoreConversationState();

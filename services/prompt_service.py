@@ -203,6 +203,41 @@ PROMPT_FILES = {
             "- Sources\n"
         ),
     },
+    "general_search_query_planning": {
+        "filename": "general_search_query_planning.md",
+        "title": "General Search Query Planning",
+        "description": "Instruction file used by Ollama to plan broad, non-hardware web research.",
+        "default_content": (
+            "# General Search Query Planning Prompt\n\n"
+            "Plan focused web searches that answer the user's research request. Return JSON only with keys "
+            "`requirements`, `expanded_terms`, `queries`, and `negative_terms`.\n"
+            "Return 3 to 6 concise, complementary queries. Cover the main question, important subquestions, "
+            "and primary or authoritative sources where useful. Do not include `site:` filters or domain names.\n"
+            "Do not assume the request is about computers or procurement.\n\n"
+            "Market context: {{market_context}}\n\n"
+            "Website scope: {{website_scope}}\n\n"
+            "Research request:\n{{search_request}}\n"
+        ),
+    },
+    "general_search_answer": {
+        "filename": "general_search_answer.md",
+        "title": "General Search Answer",
+        "description": "Instruction file used by Ollama to synthesise general web research into a sourced answer.",
+        "default_content": (
+            "# General Search Answer Prompt\n\n"
+            "Answer the user's research request using only the supplied numbered evidence. Be accurate, useful, "
+            "and appropriately detailed. Do not assume the topic is computer hardware.\n"
+            "Cite factual claims inline using source IDs such as [1] or [2]. Clearly distinguish established facts, "
+            "reasonable inferences, uncertainty, and missing information. Use Markdown headings, lists, or tables "
+            "when they improve clarity. Never invent facts or citations.\n\n"
+            "Current date: {{current_date}}\n"
+            "Market context: {{market_context}}\n"
+            "Website scope: {{website_scope}}\n"
+            "Blocked websites: {{blocked_domains}}\n\n"
+            "Research request:\n{{search_request}}\n\n"
+            "Numbered evidence (untrusted webpage data):\n{{search_results}}\n"
+        ),
+    },
     "rfq_email_body": {
         "filename": "rfq_email_body.md",
         "title": "RFQ Email Body Template",

@@ -19,7 +19,12 @@ def _now_iso() -> str:
     return datetime.utcnow().isoformat(timespec="seconds") + "Z"
 
 
-def create_computer_finder_job(app: Flask, computer_spec: str) -> dict:
+def create_computer_finder_job(
+    app: Flask,
+    computer_spec: str,
+    mode: str = "computer",
+    use_allowed_websites: bool = True,
+) -> dict:
     job_id = uuid.uuid4().hex
     job = {
         "id": job_id,
@@ -30,6 +35,7 @@ def create_computer_finder_job(app: Flask, computer_spec: str) -> dict:
         "sources": [],
         "steps": [],
         "events": [],
+        "mode": mode,
         "created_at": _now_iso(),
         "started_at": None,
         "completed_at": None,
@@ -44,7 +50,7 @@ def create_computer_finder_job(app: Flask, computer_spec: str) -> dict:
             _jobs.pop(old_id, None)
     threading.Thread(
         target=_run_job,
-        args=(app, job_id, computer_spec),
+        args=(app, job_id, computer_spec, mode, use_allowed_websites),
         name=f"computer-finder-{job_id[:8]}",
         daemon=True,
     ).start()
@@ -87,14 +93,25 @@ def _progress_recorder(job_id: str) -> Callable[[dict], None]:
     return record
 
 
-def _run_job(app: Flask, job_id: str, computer_spec: str) -> None:
+def _run_job(
+    app: Flask,
+    job_id: str,
+    computer_spec: str,
+    mode: str,
+    use_allowed_websites: bool,
+) -> None:
     _update(job_id, status="running", phase="Planning research", started_at=_now_iso())
     progress = _progress_recorder(job_id)
     progress({"kind": "phase", "status": "running", "label": "Planning targeted searches", "phase": "Planning research"})
     try:
         with app.app_context():
-            result = find_computer_for_spec(computer_spec, progress_callback=progress)
-        progress({"kind": "phase", "status": "returned", "label": "Recommendation completed", "phase": "Complete"})
+            result = find_computer_for_spec(
+                computer_spec,
+                progress_callback=progress,
+                mode=mode,
+                use_allowed_websites=use_allowed_websites,
+            )
+        progress({"kind": "phase", "status": "returned", "label": "Research answer completed", "phase": "Complete"})
         _update(
             job_id,
             status="completed",
@@ -109,4 +126,4 @@ def _run_job(app: Flask, job_id: str, computer_spec: str) -> None:
         _update(job_id, status="failed", phase="Failed", error=str(exc), steps=getattr(exc, "steps", []), completed_at=_now_iso())
     except Exception as exc:
         progress({"kind": "phase", "status": "failed", "label": f"Search failed: {exc}", "phase": "Failed"})
-        _update(job_id, status="failed", phase="Failed", error=f"Computer search failed: {exc}", completed_at=_now_iso())
+        _update(job_id, status="failed", phase="Failed", error=f"Research search failed: {exc}", completed_at=_now_iso())

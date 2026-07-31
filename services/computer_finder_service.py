@@ -82,10 +82,17 @@ def parse_domain_list(value: str | None) -> list[str]:
     return domains
 
 
-def get_computer_finder_config() -> ComputerFinderConfig:
-    allowed_domains = parse_domain_list(get_setting("computer_finder_allowed_domains"))
-    if not allowed_domains:
-        raise ComputerFinderConfigError("Add at least one searchable website domain for the computer finder.")
+def get_computer_finder_config(
+    mode: str = "computer",
+    use_allowed_websites: bool = True,
+) -> ComputerFinderConfig:
+    allowed_domains = (
+        parse_domain_list(get_setting("computer_finder_allowed_domains"))
+        if mode == "computer" or use_allowed_websites
+        else []
+    )
+    if (mode == "computer" or use_allowed_websites) and not allowed_domains:
+        raise ComputerFinderConfigError("Add at least one allowed website before using restricted search.")
 
     search_provider = (get_setting("computer_finder_search_provider") or "ollama_agent").strip().lower()
     if search_provider not in {"ollama_agent", "direct"}:
@@ -119,16 +126,19 @@ def find_computer_for_spec(
     computer_spec: str,
     config: ComputerFinderConfig | None = None,
     progress_callback: Callable[[dict], None] | None = None,
+    mode: str = "computer",
+    use_allowed_websites: bool = True,
 ) -> dict:
     if not computer_spec.strip():
         raise ComputerFinderConfigError("Enter a computer specification before searching.")
 
-    config = config or get_computer_finder_config()
+    mode = "general" if mode == "general" else "computer"
+    config = config or get_computer_finder_config(mode, use_allowed_websites)
     if config.search_provider == "ollama_agent":
-        return _find_with_ollama_research_agent(computer_spec, config, progress_callback)
+        return _find_with_ollama_research_agent(computer_spec, config, progress_callback, mode)
 
     client = OllamaClient(config.ollama_url)
-    search_plan, planning_steps = _plan_searches(client, config.model, computer_spec, config)
+    search_plan, planning_steps = _plan_searches(client, config.model, computer_spec, config, mode)
     search_results, search_steps = _collect_search_results(computer_spec, search_plan, config)
     page_context, page_steps = _build_page_context(search_results, config)
     if not page_context:
@@ -138,7 +148,7 @@ def find_computer_for_spec(
             [*planning_steps, *search_steps, *page_steps],
         )
 
-    prompt = build_computer_finder_prompt(computer_spec, page_context, config)
+    prompt = build_computer_finder_prompt(computer_spec, page_context, config, mode)
     answer = client.generate_text(config.model, prompt)
     if not answer:
         raise ComputerFinderConfigError("The Ollama model returned an empty answer.")
@@ -160,6 +170,7 @@ def _find_with_ollama_research_agent(
     computer_spec: str,
     config: ComputerFinderConfig,
     progress_callback: Callable[[dict], None] | None = None,
+    mode: str = "computer",
 ) -> dict:
     market = ", ".join(part for part in [config.city, config.region, config.country] if part) or "the configured market"
     region = {
@@ -180,6 +191,13 @@ def _find_with_ollama_research_agent(
         max_pages=config.max_pages_to_read,
         results_per_query=config.search_results_per_domain,
         progress_callback=progress_callback,
+        planning_prompt_key=("general_search_query_planning" if mode == "general" else "computer_finder_query_planning"),
+        answer_prompt_key=("general_search_answer" if mode == "general" else "computer_finder_search"),
+        website_scope=(
+            "Only these websites:\n" + "\n".join(f"- {domain}" for domain in config.allowed_domains)
+            if config.allowed_domains
+            else "Any website except the blocked list"
+        ),
     )
     try:
         return agent.research(computer_spec.strip(), market, date.today().isoformat())
@@ -187,16 +205,27 @@ def _find_with_ollama_research_agent(
         raise ComputerFinderConfigError(str(exc)) from exc
 
 
-def build_computer_finder_prompt(computer_spec: str, search_results_context: str, config: ComputerFinderConfig) -> str:
+def build_computer_finder_prompt(
+    computer_spec: str,
+    search_results_context: str,
+    config: ComputerFinderConfig,
+    mode: str = "computer",
+) -> str:
     market_parts = [part for part in [config.city, config.region, config.country] if part]
     market_context = ", ".join(market_parts) if market_parts else "No market location configured"
     return render_prompt(
-        "computer_finder_search",
+        "general_search_answer" if mode == "general" else "computer_finder_search",
         current_date=date.today().isoformat(),
         market_context=market_context,
         allowed_domains="\n".join(f"- {domain}" for domain in config.allowed_domains),
         blocked_domains="\n".join(f"- {domain}" for domain in config.blocked_domains) or "- None",
         computer_spec=computer_spec.strip(),
+        search_request=computer_spec.strip(),
+        website_scope=(
+            "Only these websites:\n" + "\n".join(f"- {domain}" for domain in config.allowed_domains)
+            if config.allowed_domains
+            else "Any website except the blocked list"
+        ),
         search_results=search_results_context,
     )
 
@@ -210,11 +239,23 @@ def _int_setting(key: str, fallback: int, minimum: int, maximum: int) -> int:
     return max(minimum, min(maximum, value))
 
 
-def _plan_searches(client: OllamaClient, model_name: str, computer_spec: str, config: ComputerFinderConfig) -> tuple[ComputerSearchPlan, list[str]]:
+def _plan_searches(
+    client: OllamaClient,
+    model_name: str,
+    computer_spec: str,
+    config: ComputerFinderConfig,
+    mode: str = "computer",
+) -> tuple[ComputerSearchPlan, list[str]]:
     prompt = render_prompt(
-        "computer_finder_query_planning",
+        "general_search_query_planning" if mode == "general" else "computer_finder_query_planning",
         computer_spec=computer_spec.strip(),
+        search_request=computer_spec.strip(),
         allowed_domains="\n".join(f"- {domain}" for domain in config.allowed_domains),
+        website_scope=(
+            "Only these websites:\n" + "\n".join(f"- {domain}" for domain in config.allowed_domains)
+            if config.allowed_domains
+            else "Any website except the blocked list"
+        ),
         market_context=", ".join(part for part in [config.city, config.region, config.country] if part) or "No market location configured",
     )
     try:
@@ -377,12 +418,14 @@ def _collect_search_results(computer_spec: str, search_plan: ComputerSearchPlan,
     seen_urls: set[str] = set()
     steps: list[str] = []
     failed_searches = 0
-    for domain in config.allowed_domains:
+    search_domains: list[str | None] = list(config.allowed_domains) or [None]
+    for domain in search_domains:
         domain_results = 0
         for query in search_plan.queries:
             if domain_results >= config.search_results_per_domain:
                 break
-            site_query = f"site:{domain} {_query_with_negative_terms(query, search_plan.negative_terms)}"
+            query_text = _query_with_negative_terms(query, search_plan.negative_terms)
+            site_query = f"site:{domain} {query_text}" if domain else query_text
             try:
                 query_results = _duckduckgo_search(site_query)
             except Exception:
@@ -408,7 +451,11 @@ def _collect_search_results(computer_spec: str, search_plan: ComputerSearchPlan,
                     break
     return results, [
         *steps,
-        f"DuckDuckGo fallback searched {len(config.allowed_domains)} configured website domain(s) with site-restricted web queries.",
+        (
+            f"DuckDuckGo fallback searched {len(config.allowed_domains)} configured website domain(s) with site-restricted web queries."
+            if config.allowed_domains
+            else "DuckDuckGo fallback searched the open web, excluding blocked websites."
+        ),
         f"Collected {len(results)} candidate result(s).",
         f"Search requests skipped after errors: {failed_searches}." if failed_searches else "All search requests completed without transport errors.",
     ]
@@ -465,7 +512,7 @@ def _domain_allowed(url: str, allowed_domains: list[str], blocked_domains: list[
         return False
     if _domain_blocked(url, blocked_domains):
         return False
-    return any(host == allowed or host.endswith(f".{allowed}") for allowed in allowed_domains)
+    return not allowed_domains or any(host == allowed or host.endswith(f".{allowed}") for allowed in allowed_domains)
 
 
 def _domain_blocked(url: str, blocked_domains: list[str]) -> bool:
