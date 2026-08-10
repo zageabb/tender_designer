@@ -48,5 +48,12 @@ class Config:
         ".eml",
         ".msg",
         ".csv",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".webp",
+        ".bmp",
+        ".avif",
         ".zip",
     }

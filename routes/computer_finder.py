@@ -371,7 +371,8 @@ def update_prompts():
     if not isinstance(prompts, dict):
         return jsonify({"ok": False, "message": "No Finder instructions were supplied."}), 400
 
-    known_keys = set(COMPUTER_FINDER_PROMPT_KEYS + GENERAL_SEARCH_PROMPT_KEYS)
+    # Preserve the configured prompt order so saves and their audit trail are deterministic.
+    known_keys = COMPUTER_FINDER_PROMPT_KEYS + GENERAL_SEARCH_PROMPT_KEYS
     supplied_keys = [key for key in known_keys if key in prompts]
     missing_keys = [key for key in supplied_keys if not str(prompts.get(key) or "").strip()]
     if not supplied_keys:
