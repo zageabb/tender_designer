@@ -21,9 +21,20 @@ from services.mailbox_service import (
     send_composed_message,
 )
 from services.managed_paths import ManagedPathError, resolve_managed_path
+from services.tender_health import ACTIVE_STATUSES
 
 
 mailbox_bp = Blueprint("mailbox", __name__, url_prefix="/mailbox")
+
+
+def _active_tenders() -> list[Tender]:
+    return (
+        Tender.query
+        .filter(Tender.status.in_(ACTIVE_STATUSES))
+        .order_by(Tender.updated_at.desc())
+        .limit(200)
+        .all()
+    )
 
 
 def _selected_message_ids() -> list[int]:
@@ -113,7 +124,7 @@ def index():
         messages=messages[:50],
         conversation_summaries=conversation_summaries[:50],
         tender=tender,
-        tenders=Tender.query.order_by(Tender.updated_at.desc()).limit(200).all(),
+        tenders=_active_tenders(),
         folders=folders,
         folder_error=folder_error,
         selected_folder=selected_folder,
@@ -177,7 +188,7 @@ def compose_message():
     return render_template(
         "mailbox/compose.html",
         tender=tender,
-        tenders=Tender.query.order_by(Tender.updated_at.desc()).limit(200).all(),
+        tenders=_active_tenders(),
         selected_folder=selected_folder,
         chat_context={
             "page": "mailbox_compose",
@@ -207,7 +218,7 @@ def view_message(message_id: int):
         "mailbox/view.html",
         mailbox_message=mailbox_message,
         tender=tender,
-        tenders=Tender.query.order_by(Tender.updated_at.desc()).limit(200).all(),
+        tenders=_active_tenders(),
         conversation_messages=conversation_messages,
         selected_folder=selected_folder,
         chat_context={

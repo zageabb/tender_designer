@@ -8,6 +8,7 @@ from database import db
 from models import LLMRunLog, Tender, TenderDocument, TenderItem, TenderQuestion, TenderSubItem
 from services.ollama_client import OllamaClient
 from services.prompt_service import render_prompt
+from services.tender_status import advance_tender_status
 
 
 def _combined_document_text(documents: list[TenderDocument]) -> str:
@@ -111,7 +112,8 @@ def extract_tender_metadata(
         tender.customer_name = parsed.get("customer_name") or tender.customer_name
         tender.tender_number = parsed.get("tender_number") or tender.tender_number
         tender.title = parsed.get("title") or tender.title
-        tender.status = parsed.get("status") or tender.status
+        if parsed.get("status"):
+            advance_tender_status(tender, parsed["status"])
         tender.submission_date = _parse_date_value(parsed.get("submission_date")) or tender.submission_date
         tender.submission_time = _parse_time_value(parsed.get("submission_time")) or tender.submission_time
         tender.submission_type = _parse_submission_type(parsed.get("submission_type")) or tender.submission_type

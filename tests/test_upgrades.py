@@ -7,7 +7,7 @@ import socket
 import tempfile
 import unittest
 import zipfile
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import call, patch
@@ -406,6 +406,26 @@ class UpgradeTestCase(unittest.TestCase):
             mailbox_jobs._worker_thread = original_thread
             mailbox_jobs._worker_started = original_started
 
+    def test_mailbox_tender_dropdown_only_shows_active_tenders(self) -> None:
+        with self.app.app_context():
+            db.session.add_all(
+                [
+                    Tender(customer_name="Active", tender_number="MAIL-ACTIVE", status="Ready For Review"),
+                    Tender(customer_name="Submitted", tender_number="MAIL-SUBMITTED", status="Submitted"),
+                    Tender(customer_name="Awarded", tender_number="MAIL-AWARDED", status="Awarded"),
+                    Tender(customer_name="Cancelled", tender_number="MAIL-CANCELLED", status="Cancelled"),
+                ]
+            )
+            db.session.commit()
+
+        self._login()
+        body = self.client.get("/mailbox/compose").get_data(as_text=True)
+
+        self.assertIn("MAIL-ACTIVE", body)
+        self.assertNotIn("MAIL-SUBMITTED", body)
+        self.assertNotIn("MAIL-AWARDED", body)
+        self.assertNotIn("MAIL-CANCELLED", body)
+
     def test_mailbox_archive_requires_remote_confirmation(self) -> None:
         message = SimpleNamespace(
             mailbox_folder="INBOX",
@@ -511,6 +531,26 @@ class UpgradeTestCase(unittest.TestCase):
             tender_monitor._monitor_scan_event.clear()
             tender_monitor._monitor_thread = original_thread
             tender_monitor._monitor_started = original_started
+
+    def test_tender_monitor_marks_unresolved_awards_lost_after_three_days(self) -> None:
+        with self.app.app_context():
+            db.session.add_all(
+                [
+                    Tender(customer_name="Overdue", tender_number="AWARD-OVERDUE", status="Submitted", award_date=date(2026, 8, 7)),
+                    Tender(customer_name="Grace", tender_number="AWARD-GRACE", status="Submitted", award_date=date(2026, 8, 8)),
+                    Tender(customer_name="Won", tender_number="AWARD-WON", status="Awarded", award_date=date(2026, 8, 1)),
+                    Tender(customer_name="Closed", tender_number="AWARD-CLOSED", status="No Bid", award_date=date(2026, 8, 1)),
+                ]
+            )
+            db.session.commit()
+
+            changed = tender_monitor._mark_expired_award_dates_lost(date(2026, 8, 10))
+
+            self.assertEqual(changed, 1)
+            self.assertEqual(Tender.query.filter_by(tender_number="AWARD-OVERDUE").one().status, "Lost")
+            self.assertEqual(Tender.query.filter_by(tender_number="AWARD-GRACE").one().status, "Submitted")
+            self.assertEqual(Tender.query.filter_by(tender_number="AWARD-WON").one().status, "Awarded")
+            self.assertEqual(Tender.query.filter_by(tender_number="AWARD-CLOSED").one().status, "No Bid")
 
     def test_redirect_is_validated_before_next_connection(self) -> None:
         class RedirectResponse:
