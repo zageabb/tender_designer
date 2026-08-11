@@ -18,6 +18,7 @@ from services.markdown_tools import extracted_text_suffix
 from services.managed_paths import resolve_managed_path, unlink_managed_file
 from services.ollama_client import OllamaClient
 from services.settings_service import get_setting, get_task_model
+from services.tender_status import advance_tender_status
 from services.worker_lease import acquire_worker_lease
 
 
@@ -289,7 +290,7 @@ def process_extraction_job(app: Flask, job_id: int) -> None:
                 )
             )
             if success:
-                tender.status = success_status
+                advance_tender_status(tender, success_status)
                 job.status = "completed"
                 job.summary_message = message
                 job.error_message = None

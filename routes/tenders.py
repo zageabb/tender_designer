@@ -21,6 +21,7 @@ from services.markdown_tools import extracted_text_suffix, looks_like_markdown, 
 from services.managed_paths import ManagedPathError, resolve_managed_path, unlink_managed_file
 from services.settings_service import get_task_model
 from services.tender_health import evaluate_tender_health, get_signal_legend
+from services.tender_status import TENDER_STATUS_ORDER, advance_tender_status
 from services.upload_ingestion import expand_upload_entries
 
 
@@ -28,20 +29,7 @@ tenders_bp = Blueprint("tenders", __name__, url_prefix="/tenders")
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".avif"}
 
-TENDER_STATUS_OPTIONS = [
-    "New",
-    "Documents Uploaded",
-    "Metadata Extracted",
-    "Items Extracted",
-    "Ready For Review",
-    "RFI Required",
-    "Quoted",
-    "Submitted",
-    "Awarded",
-    "No Bid",
-    "Lost",
-    "Cancelled",
-]
+TENDER_STATUS_OPTIONS = TENDER_STATUS_ORDER
 
 SUBMISSION_TYPE_OPTIONS = ["Email", "Portal", "Postal", "Hand delivered"]
 
@@ -456,7 +444,7 @@ def upload_document(tender_id: int):
                     )
                 )
             added_count += 1
-    tender.status = "Documents Uploaded"
+    advance_tender_status(tender, "Documents Uploaded")
     db.session.commit()
     flash(f"Document upload complete. {added_count} file(s) stored.", "success")
     return _detail_redirect(tender.id, anchor="documents")

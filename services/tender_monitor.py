@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import threading
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from flask import Flask
 
@@ -23,6 +23,9 @@ _monitor_active = False
 _last_scan_started_at: datetime | None = None
 _last_scan_completed_at: datetime | None = None
 _last_scan_summary = "Not run yet."
+
+FINAL_AWARD_STATUSES = {"Awarded", "Lost", "No Bid", "Cancelled"}
+AWARD_GRACE_DAYS = 3
 
 
 def _monitor_enabled() -> bool:
@@ -88,6 +91,21 @@ def request_tender_monitor_scan() -> None:
     _monitor_scan_event.set()
 
 
+def _mark_expired_award_dates_lost(today: date | None = None) -> int:
+    today = today or date.today()
+    cutoff = today - timedelta(days=AWARD_GRACE_DAYS)
+    overdue_tenders = (
+        Tender.query
+        .filter(Tender.award_date.is_not(None))
+        .filter(Tender.award_date <= cutoff)
+        .filter(Tender.status.notin_(FINAL_AWARD_STATUSES))
+        .all()
+    )
+    for tender in overdue_tenders:
+        tender.status = "Lost"
+    return len(overdue_tenders)
+
+
 def run_tender_monitor_scan(app: Flask) -> dict[str, int]:
     global _monitor_active, _last_scan_started_at, _last_scan_completed_at, _last_scan_summary
     _monitor_active = True
@@ -98,9 +116,13 @@ def run_tender_monitor_scan(app: Flask) -> dict[str, int]:
         "sent": 0,
         "skipped_existing": 0,
         "failed": 0,
+        "marked_lost": 0,
     }
     with app.app_context():
         try:
+            result["marked_lost"] = _mark_expired_award_dates_lost()
+            if result["marked_lost"]:
+                db.session.commit()
             recipients = parse_email_recipients(get_setting("tender_warning_admin_emails", ""))
             active_tenders = (
                 Tender.query.filter(Tender.status.in_(sorted(ACTIVE_STATUSES)))
@@ -157,7 +179,8 @@ def run_tender_monitor_scan(app: Flask) -> dict[str, int]:
             _last_scan_completed_at = datetime.utcnow()
             _last_scan_summary = (
                 f"Checked {result['checked']} tender(s), flagged {result['flagged']}, "
-                f"sent {result['sent']}, skipped {result['skipped_existing']}, failed {result['failed']}."
+                f"marked lost {result['marked_lost']}, sent {result['sent']}, "
+                f"skipped {result['skipped_existing']}, failed {result['failed']}."
             )
     return result
 
