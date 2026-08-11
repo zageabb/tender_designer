@@ -61,6 +61,7 @@
       <textarea class="form-control" id="computer-finder-instruction" rows="3" placeholder="Example: Prioritise models under £900 with a three-year onsite warranty."></textarea>
       <div class="d-flex gap-2 flex-wrap mt-3">
         <button class="btn btn-primary btn-lg" id="computer-finder-submit" type="submit">Search Selected Items</button>
+        <button class="btn btn-outline-primary btn-lg" id="computer-finder-spec-auto" type="button">Find &amp; Generate Spec</button>
         <button class="btn btn-outline-secondary btn-lg" id="computer-finder-clear" type="button">New Conversation</button>
       </div>
     </form>
@@ -91,14 +92,19 @@
   class="card glass-panel mt-4 d-none"
   data-export-url="{{ url_for('computer_finder.export_result') }}"
   data-attach-url="{{ url_for('computer_finder.attach_result_to_tender') }}"
+  data-spec-export-url="{{ url_for('computer_finder.export_specification_sheet') }}"
+  data-spec-attach-url="{{ url_for('computer_finder.attach_specification_sheet') }}"
 >
   <div class="card-header">Use latest research result</div>
   <div class="card-body">
     <div class="row g-2 align-items-end">
-      <div class="col-md-3">
-        <button class="btn btn-outline-primary w-100" id="computer-finder-download" type="button">Download .md</button>
+      <div class="col-md-2">
+        <button class="btn btn-outline-secondary w-100" id="computer-finder-download" type="button">Research .md</button>
       </div>
-      <div class="col-md-6">
+      <div class="col-md-2">
+        <button class="btn btn-outline-primary w-100" id="computer-finder-spec-download" type="button">Spec Sheet .docx</button>
+      </div>
+      <div class="col-md-4">
         <label class="form-label fw-semibold" for="computer-finder-tender">Save result to tender</label>
         <select class="form-select" id="computer-finder-tender">
           <option value="">Choose a tender</option>
@@ -109,8 +115,11 @@
           {% endfor %}
         </select>
       </div>
-      <div class="col-md-3">
-        <button class="btn btn-primary w-100" id="computer-finder-attach" type="button">Save To Tender</button>
+      <div class="col-md-2">
+        <button class="btn btn-outline-secondary w-100" id="computer-finder-attach" type="button">Save Research</button>
+      </div>
+      <div class="col-md-2">
+        <button class="btn btn-primary w-100" id="computer-finder-spec-attach" type="button">Add Spec To Tender</button>
       </div>
     </div>
     <div class="small mt-2" id="computer-finder-save-status"></div>

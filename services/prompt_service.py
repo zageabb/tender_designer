@@ -203,6 +203,20 @@ PROMPT_FILES = {
             "- Sources\n"
         ),
     },
+    "spec_sheet_structuring": {
+        "filename": "spec_sheet_structuring.md",
+        "title": "Machine Specification Sheet",
+        "description": "Instruction used to turn sourced Computer Finder results into dynamic Word specification sheets. Pricing is always excluded by application rules.",
+        "default_content": (
+            "# Machine Specification Sheet Structuring Prompt\n\n"
+            "Turn the Computer Finder research into factual machine-specification rows and return JSON only.\n"
+            "Return an object with `sections.system`, `sections.connectivity`, and `sections.warranty`; each is an array of objects with `label` and `value`.\n"
+            "Use only supported facts, omit unknown fields, and never include price, cost, RRP, MSRP, discounts, totals, or commercial pricing.\n\n"
+            "Requested specification:\n{{computer_spec}}\n\n"
+            "Computer Finder research answer:\n{{research_answer}}\n\n"
+            "Available sources:\n{{sources}}\n"
+        ),
+    },
     "general_search_query_planning": {
         "filename": "general_search_query_planning.md",
         "title": "General Search Query Planning",

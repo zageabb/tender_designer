@@ -16,6 +16,7 @@ from services.file_storage import save_tender_bytes
 from services.ollama_client import OllamaClient
 from services.prompt_service import PROMPT_FILES, ensure_prompt_files, get_prompt_content, save_prompt_content
 from services.settings_service import DEFAULT_SETTINGS, ensure_default_settings, get_setting
+from services.specification_document import generate_specification_document
 
 
 computer_finder_bp = Blueprint("computer_finder", __name__, url_prefix="/computer-finder")
@@ -39,6 +40,7 @@ COMPUTER_FINDER_SETTING_KEYS = [
 COMPUTER_FINDER_PROMPT_KEYS = [
     "computer_finder_query_planning",
     "computer_finder_search",
+    "spec_sheet_structuring",
 ]
 
 GENERAL_SEARCH_PROMPT_KEYS = [
@@ -326,6 +328,64 @@ def attach_result_to_tender():
     )
 
 
+def _specification_result() -> tuple[bytes, str, str]:
+    computer_spec, answer, sources, mode = _result_payload()
+    if mode != "computer":
+        raise ValueError("Machine specification sheets are available from Computer Finder results only.")
+    return generate_specification_document(computer_spec, answer, sources)
+
+
+@computer_finder_bp.route("/spec-sheet/export", methods=["POST"])
+def export_specification_sheet():
+    try:
+        content, filename, _extracted_text = _specification_result()
+    except (ValueError, FileNotFoundError) as exc:
+        return jsonify({"ok": False, "message": str(exc)}), 400
+    return send_file(
+        BytesIO(content),
+        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        as_attachment=True,
+        download_name=filename,
+    )
+
+
+@computer_finder_bp.route("/spec-sheet/attach", methods=["POST"])
+def attach_specification_sheet():
+    payload = request.get_json(force=True)
+    try:
+        tender_id = int(payload.get("tender_id"))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "message": "Choose a tender before saving the specification sheet."}), 400
+    tender = Tender.query.get(tender_id)
+    if tender is None:
+        return jsonify({"ok": False, "message": "The selected tender could not be found."}), 404
+    try:
+        content, filename, extracted_text = _specification_result()
+    except (ValueError, FileNotFoundError) as exc:
+        return jsonify({"ok": False, "message": str(exc)}), 400
+    original_name, stored_name, saved_path = save_tender_bytes(
+        current_app.config["DATA_DIR"], tender.id, filename, content
+    )
+    document = TenderDocument(
+        tender=tender,
+        original_filename=original_name,
+        stored_filename=stored_name,
+        file_path=str(saved_path),
+        file_type="docx",
+        extracted_text=extracted_text,
+        processed=True,
+        processing_notes="Generated from sourced Computer Finder research.",
+    )
+    db.session.add(document)
+    db.session.commit()
+    return jsonify(
+        {
+            "ok": True,
+            "message": f"Added {original_name} to tender {tender.tender_number}.",
+            "document_id": document.id,
+            "tender_url": url_for("tenders.detail_tender", tender_id=tender.id, _anchor="documents"),
+        }
+    )
 @computer_finder_bp.route("/settings", methods=["POST"])
 def update_settings():
     ensure_default_settings(db)
