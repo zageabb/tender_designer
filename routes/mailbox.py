@@ -11,6 +11,7 @@ from services.mailbox_service import (
     _commit_with_retry,
     archive_mailbox_message,
     create_tender_from_mailbox_message,
+    copy_linked_mailbox_message_to_tenders,
     delete_mailbox_message,
     import_mailbox_message_to_tender,
     list_mailbox_folders,
@@ -25,12 +26,13 @@ from services.tender_health import ACTIVE_STATUSES
 
 
 mailbox_bp = Blueprint("mailbox", __name__, url_prefix="/mailbox")
+MAILBOX_LINKABLE_STATUSES = ACTIVE_STATUSES | {"Submitted"}
 
 
-def _active_tenders() -> list[Tender]:
+def _linkable_tenders() -> list[Tender]:
     return (
         Tender.query
-        .filter(Tender.status.in_(ACTIVE_STATUSES))
+        .filter(Tender.status.in_(MAILBOX_LINKABLE_STATUSES))
         .order_by(Tender.updated_at.desc())
         .limit(200)
         .all()
@@ -124,7 +126,7 @@ def index():
         messages=messages[:50],
         conversation_summaries=conversation_summaries[:50],
         tender=tender,
-        tenders=_active_tenders(),
+        tenders=_linkable_tenders(),
         folders=folders,
         folder_error=folder_error,
         selected_folder=selected_folder,
@@ -188,7 +190,7 @@ def compose_message():
     return render_template(
         "mailbox/compose.html",
         tender=tender,
-        tenders=_active_tenders(),
+        tenders=_linkable_tenders(),
         selected_folder=selected_folder,
         chat_context={
             "page": "mailbox_compose",
@@ -218,7 +220,7 @@ def view_message(message_id: int):
         "mailbox/view.html",
         mailbox_message=mailbox_message,
         tender=tender,
-        tenders=_active_tenders(),
+        tenders=_linkable_tenders(),
         conversation_messages=conversation_messages,
         selected_folder=selected_folder,
         chat_context={
@@ -303,9 +305,13 @@ def archive_message(message_id: int):
     selected_folder = (request.form.get("folder") or mailbox_message.mailbox_folder or "").strip()
     subject = mailbox_message.subject or "(No subject)"
     try:
+        copied_to = copy_linked_mailbox_message_to_tenders(current_app.config["DATA_DIR"], mailbox_message)
+        if copied_to:
+            _commit_with_retry()
         remote_status = archive_mailbox_message(mailbox_message)
         _commit_with_retry()
-        flash(f"Archived mailbox email {subject}. Remote status: {remote_status}.", "success")
+        copy_note = f" Saved a copy to {copied_to} linked tender(s)." if copied_to else ""
+        flash(f"Archived mailbox email {subject}.{copy_note} Remote status: {remote_status}.", "success")
     except Exception as exc:
         db.session.rollback()
         flash(f"Could not archive that mailbox email: {exc}", "danger")
@@ -378,12 +384,17 @@ def bulk_action():
         if action_name == "archive":
             archived_count = 0
             remote_statuses: list[str] = []
+            copied_to_count = 0
             for mailbox_message in messages:
+                copied_to_count += copy_linked_mailbox_message_to_tenders(current_app.config["DATA_DIR"], mailbox_message)
+                if mailbox_message.tender_links:
+                    _commit_with_retry()
                 remote_statuses.append(archive_mailbox_message(mailbox_message))
                 _commit_with_retry()
                 archived_count += 1
             summary = ", ".join(sorted(dict.fromkeys(remote_statuses)))
-            flash(f"Archived {archived_count} mailbox email(s). Remote status: {summary}.", "success")
+            copy_note = f" Saved {copied_to_count} linked tender copy/copies." if copied_to_count else ""
+            flash(f"Archived {archived_count} mailbox email(s).{copy_note} Remote status: {summary}.", "success")
             return redirect(url_for("mailbox.index", **route_kwargs))
 
         if action_name == "delete":
