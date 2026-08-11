@@ -15,6 +15,7 @@ let activeComputerFinderJobId = null;
 let activeComputerFinderSpec = "";
 let computerFinderPollTimer = null;
 let computerFinderWorkingMessage = null;
+let generateSpecAfterSearch = false;
 
 function currentResearchMode() {
   return researchMode?.value === "general" ? "general" : "computer";
@@ -44,6 +45,9 @@ function updateResearchModeUi() {
     : "Example: Prioritise models under £900 with a three-year onsite warranty.";
   const submitButton = document.getElementById("computer-finder-submit");
   if (submitButton && !submitButton.disabled) submitButton.textContent = general ? "Search The Web" : "Search Selected Items";
+  document.getElementById("computer-finder-spec-auto")?.classList.toggle("d-none", general);
+  document.getElementById("computer-finder-spec-download")?.classList.toggle("d-none", general);
+  document.getElementById("computer-finder-spec-attach")?.classList.toggle("d-none", general);
 }
 
 function renderComputerFinderMarkdown(text) {
@@ -119,7 +123,9 @@ async function computerFinderJsonResponse(response) {
 
 function setComputerFinderRunning(running) {
   const submitButton = document.getElementById("computer-finder-submit");
+  const specButton = document.getElementById("computer-finder-spec-auto");
   if (!submitButton) return;
+  if (specButton) specButton.disabled = running;
   if (running) {
     submitButton.disabled = true;
     submitButton.dataset.originalText ||= submitButton.textContent;
@@ -191,7 +197,12 @@ function finishComputerFinderJob(job) {
     };
     computerFinderSaveActions?.classList.remove("d-none");
     setComputerFinderSaveStatus("");
+    if (generateSpecAfterSearch) {
+      generateSpecAfterSearch = false;
+      downloadSpecificationSheet();
+    }
   } else {
+    generateSpecAfterSearch = false;
     const message = `Search could not be completed: ${job.error || "Unknown error"}`;
     appendFinderMessage("assistant", message, [], job.steps || []);
     computerFinderHistory.push({ role: "assistant", content: message });
@@ -272,9 +283,24 @@ computerFinderForm?.addEventListener("submit", async (event) => {
   }
 });
 
+document.getElementById("computer-finder-spec-auto")?.addEventListener("click", () => {
+  if (currentResearchMode() !== "computer") {
+    setComputerFinderSaveStatus("Switch to Computer Finder to generate a machine specification.", "warning");
+    return;
+  }
+  if (!computerFinderBaseSpec?.value.trim()) {
+    appendFinderMessage("assistant", "Add starting requirements or select tender items before generating a specification.");
+    return;
+  }
+  generateSpecAfterSearch = true;
+  computerFinderInstruction.value = "Find one exact best-fit product and collect comprehensive manufacturer-backed technical data for a machine specification sheet: model, processor, memory, storage, graphics, physical format, dimensions, weight, security, networking, ports, expansion, included peripherals, software, warranty, compliance, identifiers, and official product/datasheet/support sources. Do not include any price or cost information.";
+  computerFinderForm.requestSubmit();
+});
+
 document.getElementById("computer-finder-clear")?.addEventListener("click", () => {
   computerFinderHistory = [];
   latestComputerFinderResult = null;
+  generateSpecAfterSearch = false;
   activeComputerFinderJobId = null;
   activeComputerFinderSpec = "";
   clearTimeout(computerFinderPollTimer);
@@ -301,6 +327,7 @@ researchMode?.addEventListener("change", () => {
   computerFinderPollTimer = null;
   computerFinderHistory = [];
   latestComputerFinderResult = null;
+  generateSpecAfterSearch = false;
   activeComputerFinderJobId = null;
   activeComputerFinderSpec = "";
   computerFinderWorkingMessage = null;
@@ -345,6 +372,42 @@ document.getElementById("computer-finder-download")?.addEventListener("click", a
   }
 });
 
+async function downloadSpecificationSheet() {
+  if (!latestComputerFinderResult || !computerFinderSaveActions) return;
+  setComputerFinderSaveStatus("Building specification sheet from sourced research...");
+  const button = document.getElementById("computer-finder-spec-download");
+  if (button) button.disabled = true;
+  try {
+    const response = await fetch(computerFinderSaveActions.dataset.specExportUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(latestComputerFinderResult),
+    });
+    if (!response.ok) {
+      const result = await computerFinderJsonResponse(response);
+      throw new Error(result.message || "Could not generate the specification sheet.");
+    }
+    const blob = await response.blob();
+    const disposition = response.headers.get("Content-Disposition") || "";
+    const filenameMatch = disposition.match(/filename="?([^";]+)"?/i);
+    const downloadUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = filenameMatch?.[1] || "Machine_Specification.docx";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(downloadUrl);
+    setComputerFinderSaveStatus("Specification sheet generated. Pricing was excluded.", "success");
+  } catch (error) {
+    setComputerFinderSaveStatus(error.message, "danger");
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+document.getElementById("computer-finder-spec-download")?.addEventListener("click", downloadSpecificationSheet);
+
 document.getElementById("computer-finder-attach")?.addEventListener("click", async () => {
   if (!latestComputerFinderResult || !computerFinderSaveActions) return;
   const tenderId = document.getElementById("computer-finder-tender")?.value;
@@ -375,6 +438,39 @@ document.getElementById("computer-finder-attach")?.addEventListener("click", asy
     setComputerFinderSaveStatus(error.message, "danger");
   } finally {
     attachButton.disabled = false;
+  }
+});
+
+document.getElementById("computer-finder-spec-attach")?.addEventListener("click", async () => {
+  if (!latestComputerFinderResult || !computerFinderSaveActions) return;
+  const tenderId = document.getElementById("computer-finder-tender")?.value;
+  const button = document.getElementById("computer-finder-spec-attach");
+  if (!tenderId) {
+    setComputerFinderSaveStatus("Choose a tender first.", "warning");
+    return;
+  }
+  button.disabled = true;
+  setComputerFinderSaveStatus("Generating and adding specification sheet to tender...");
+  try {
+    const response = await fetch(computerFinderSaveActions.dataset.specAttachUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...latestComputerFinderResult, tender_id: tenderId }),
+    });
+    const result = await computerFinderJsonResponse(response);
+    if (!response.ok || !result.ok) throw new Error(result.message || "Could not add the specification sheet.");
+    setComputerFinderSaveStatus(result.message, "success");
+    if (result.tender_url) {
+      computerFinderSaveStatus.append(" ");
+      const link = document.createElement("a");
+      link.href = result.tender_url;
+      link.textContent = "Open tender";
+      computerFinderSaveStatus.appendChild(link);
+    }
+  } catch (error) {
+    setComputerFinderSaveStatus(error.message, "danger");
+  } finally {
+    button.disabled = false;
   }
 });
 
