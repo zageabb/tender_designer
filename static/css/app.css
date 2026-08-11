@@ -171,9 +171,18 @@ body {
   --signal-accent: #44515d;
 }
 
-.tender-health-row > td {
+.tender-health-row > td,
+.tender-tabulator .tabulator-row.tender-health-row > .tabulator-cell {
   background: var(--signal-bg, transparent) !important;
   border-color: var(--signal-border, rgba(17, 58, 82, 0.08));
+}
+
+.tender-tabulator .tabulator-row.tender-health-row {
+  border-left: 4px solid var(--signal-accent, transparent);
+}
+
+.tender-tabulator .tabulator-row.tender-health-row:hover > .tabulator-cell {
+  background: color-mix(in srgb, var(--signal-bg, transparent) 82%, var(--signal-accent, transparent)) !important;
 }
 
 .tender-hero {
