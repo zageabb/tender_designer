@@ -7,7 +7,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, send_file, url_for
+from flask import Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request, send_file, url_for
 from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.utils import secure_filename
 
@@ -25,6 +25,8 @@ from services.upload_ingestion import expand_upload_entries
 
 
 tenders_bp = Blueprint("tenders", __name__, url_prefix="/tenders")
+
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".avif"}
 
 TENDER_STATUS_OPTIONS = [
     "New",
@@ -532,6 +534,18 @@ def download_document(document_id: int):
         flash("The uploaded document file is missing.", "danger")
         return _detail_redirect(document.tender_id, anchor="documents")
     return send_file(path, as_attachment=True, download_name=document.original_filename)
+
+
+@tenders_bp.route("/documents/<int:document_id>/image")
+def view_document_image(document_id: int):
+    document = TenderDocument.query.get_or_404(document_id)
+    if Path(document.original_filename).suffix.lower() not in IMAGE_EXTENSIONS:
+        abort(404)
+    try:
+        path = resolve_managed_path(current_app.config["DATA_DIR"], document.file_path or "", must_exist=True)
+    except ManagedPathError:
+        abort(404)
+    return send_file(path, as_attachment=False, conditional=True, max_age=3600)
 
 
 @tenders_bp.route("/<int:tender_id>/extract/<string:task_name>", methods=["POST"])

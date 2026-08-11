@@ -1080,6 +1080,57 @@ body {
   padding: 0.9rem 1rem;
 }
 
+.tabulator-responsive {
+  overflow: visible;
+}
+
+.tender-tabulator.tabulator {
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: 0.93rem;
+}
+
+.tender-tabulator .tabulator-header {
+  border: 0;
+  border-bottom: 1px solid rgba(17, 58, 82, 0.12);
+  background: rgba(237, 244, 247, 0.8);
+  color: #113a52;
+}
+
+.tender-tabulator .tabulator-header .tabulator-col,
+.tender-tabulator .tabulator-row,
+.tender-tabulator .tabulator-row .tabulator-cell {
+  border-color: rgba(17, 58, 82, 0.08);
+  background: transparent;
+}
+
+.tender-tabulator .tabulator-header .tabulator-col .tabulator-col-content,
+.tender-tabulator .tabulator-row .tabulator-cell {
+  padding: 0.85rem 1rem;
+}
+
+.tender-tabulator .tabulator-row:hover {
+  background: rgba(31, 102, 120, 0.06);
+}
+
+.tender-tabulator .tabulator-footer {
+  border: 0;
+  border-top: 1px solid rgba(17, 58, 82, 0.1);
+  background: rgba(247, 250, 251, 0.9);
+  padding: 0.65rem 1rem;
+}
+
+.tender-tabulator .tabulator-page.active {
+  background: #1f6678;
+  border-color: #1f6678;
+  color: #fff;
+}
+
+.tabulator-controls + .table-responsive {
+  border-top: 0;
+}
+
 .form-control,
 .btn,
 .alert,
@@ -1094,6 +1145,33 @@ body {
 .btn-primary {
   background: linear-gradient(135deg, #113a52, #1f6678);
   border-color: #113a52;
+}
+
+.image-preview-modal .modal-content {
+  background: #f7fafb;
+  border: 0;
+  box-shadow: 0 1.5rem 4rem rgba(5, 24, 36, 0.35);
+}
+
+.image-preview-stage {
+  min-height: 18rem;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: #16242c;
+  background-image:
+    linear-gradient(45deg, #1c2d36 25%, transparent 25%),
+    linear-gradient(-45deg, #1c2d36 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #1c2d36 75%),
+    linear-gradient(-45deg, transparent 75%, #1c2d36 75%);
+  background-size: 24px 24px;
+  background-position: 0 0, 0 12px, 12px -12px, -12px 0;
+}
+
+#image-preview-content {
+  max-width: 100%;
+  max-height: 75vh;
+  object-fit: contain;
 }
 
 .btn-outline-dark {

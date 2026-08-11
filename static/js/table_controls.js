@@ -1,209 +1,188 @@
 (() => {
-  const SKIP_SELECTORS = [
-    "[data-dashboard-table]",
-    "[data-tenders-table]",
-    "[data-admin-table]",
-  ];
-
-  const shouldSkipTable = (table) => SKIP_SELECTORS.some((selector) => table.matches(selector));
-
-  const headerText = (cell) => (cell?.textContent || "").replace(/\s+/g, " ").trim();
-
-  const inferValueType = (values) => {
-    const populated = values.filter((value) => value !== "");
-    if (populated.length === 0) {
-      return "text";
-    }
-    const allNumbers = populated.every((value) => !Number.isNaN(Number(value.replace(/[^0-9.\-]/g, ""))));
-    if (allNumbers) {
-      return "number";
-    }
-    const allDates = populated.every((value) => !Number.isNaN(Date.parse(value)));
-    if (allDates) {
-      return "date";
-    }
-    return "text";
+  const cleanText = (value) => String(value || "").replace(/\s+/g, " ").trim();
+  const htmlText = (value) => {
+    const node = document.createElement("div");
+    node.innerHTML = value || "";
+    return cleanText(node.textContent);
   };
 
-  const buildControls = (table, columns, renderRows) => {
+  const selectedValues = (select) => Array.from(select?.selectedOptions || [])
+    .map((option) => option.value)
+    .filter(Boolean);
+
+  const clearSelections = (select) => {
+    Array.from(select?.options || []).forEach((option) => { option.selected = false; });
+  };
+
+  const addGenericControls = (table, tabulator) => {
+    if (table.matches("[data-dashboard-table], [data-tenders-table], [data-admin-table]")) return;
     const controls = document.createElement("div");
-    controls.className = "card-body border-bottom";
+    controls.className = "card-body border-bottom tabulator-controls";
     controls.innerHTML = `
-      <div class="row g-3" data-generic-table-filters>
+      <div class="row g-3 align-items-end">
+        <div class="col-md-8">
+          <label class="form-label">Search table</label>
+          <input class="form-control" type="search" placeholder="Search all columns" data-tabulator-search>
+        </div>
         <div class="col-md-4">
-          <label class="form-label">Search</label>
-          <input class="form-control" type="search" placeholder="Search this table" data-generic-table-search>
+          <button class="btn btn-outline-secondary w-100" type="button" data-tabulator-reset>Reset</button>
         </div>
-        <div class="col-md-3">
-          <label class="form-label">Column Filter</label>
-          <select class="form-select" data-generic-table-column multiple size="5" aria-label="Filter across one or more columns">
-          </select>
-        </div>
-        <div class="col-md-3">
-          <label class="form-label">Filter Value</label>
-          <input class="form-control" type="search" placeholder="Contains value" data-generic-table-value>
-        </div>
-        <div class="col-md-2 d-flex align-items-end">
-          <button class="btn btn-outline-secondary w-100" type="button" data-generic-table-reset>Reset</button>
-        </div>
-      </div>
-    `;
-
-    const columnSelect = controls.querySelector("[data-generic-table-column]");
-    for (const column of columns) {
-      if (!column.label) {
-        continue;
-      }
-      const option = document.createElement("option");
-      option.value = String(column.index);
-      option.textContent = column.label;
-      columnSelect.appendChild(option);
-    }
-
-    const clearSelections = (select) => {
-      for (const option of Array.from(select?.options || [])) {
-        option.selected = false;
-      }
-    };
-
-    controls.querySelector("[data-generic-table-search]")?.addEventListener("input", renderRows);
-    controls.querySelector("[data-generic-table-column]")?.addEventListener("change", renderRows);
-    controls.querySelector("[data-generic-table-value]")?.addEventListener("input", renderRows);
-    controls.querySelector("[data-generic-table-reset]")?.addEventListener("click", () => {
-      controls.querySelector("[data-generic-table-search]").value = "";
-      clearSelections(controls.querySelector("[data-generic-table-column]"));
-      controls.querySelector("[data-generic-table-value]").value = "";
-      renderRows(true);
+      </div>`;
+    const wrapper = table._tabulatorWrapper || table.closest(".table-responsive");
+    wrapper?.parentElement?.insertBefore(controls, wrapper);
+    const search = controls.querySelector("[data-tabulator-search]");
+    search.addEventListener("input", () => applyGlobalSearch(tabulator, search.value));
+    controls.querySelector("[data-tabulator-reset]").addEventListener("click", () => {
+      search.value = "";
+      tabulator.clearFilter(true);
+      tabulator.clearSort();
     });
-
-    const parentCard = table.closest(".card");
-    const container = table.closest(".table-responsive");
-    if (parentCard && container && container.parentElement === parentCard) {
-      parentCard.insertBefore(controls, container);
-    } else if (container?.parentElement) {
-      container.parentElement.insertBefore(controls, container);
-    }
-
-    return controls;
   };
 
-  const enhanceTable = (table) => {
-    if (shouldSkipTable(table)) {
+  const applyGlobalSearch = (tabulator, query) => {
+    const needle = cleanText(query).toLowerCase();
+    if (!needle) {
+      tabulator.clearFilter(false);
       return;
     }
-    const body = table.tBodies?.[0];
-    if (!body) {
-      return;
-    }
-    const rows = Array.from(body.rows).filter((row) => row.children.length > 0);
-    if (rows.length <= 1) {
-      return;
-    }
-    const headerRow = table.tHead?.rows?.[0];
-    if (!headerRow) {
-      return;
-    }
+    tabulator.setFilter((data) => (data._search || "").includes(needle));
+  };
 
-    const columns = Array.from(headerRow.cells).map((cell, index) => ({
-      cell,
-      index,
-      label: headerText(cell),
-    }));
-
-    const sortableColumns = columns.filter((column) => column.label && column.label.toLowerCase() !== "actions");
-    const allRows = [...rows];
-    let sortIndex = sortableColumns[0]?.index ?? 0;
-    let sortDirection = "asc";
-    let controls = null;
-
-    const readCellText = (row, index) => (row.cells[index]?.textContent || "").replace(/\s+/g, " ").trim();
-    const selectedValues = (select) => Array.from(select?.selectedOptions || [])
-      .map((option) => option.value)
-      .filter((value) => value !== "");
-
-    const renderRows = (resetSort = false) => {
-      if (resetSort) {
-        sortIndex = sortableColumns[0]?.index ?? 0;
-        sortDirection = "asc";
-      }
-      const searchValue = (controls?.querySelector("[data-generic-table-search]")?.value || "").trim().toLowerCase();
-      const filterColumns = selectedValues(controls?.querySelector("[data-generic-table-column]")).map((value) => Number(value));
-      const filterValue = (controls?.querySelector("[data-generic-table-value]")?.value || "").trim().toLowerCase();
-
-      const filteredRows = allRows.filter((row) => {
-        const rowText = Array.from(row.cells)
-          .map((cell) => (cell.textContent || "").replace(/\s+/g, " ").trim().toLowerCase())
-          .join(" ");
-        if (searchValue && !rowText.includes(searchValue)) {
-          return false;
-        }
-        if (filterColumns.length && filterValue) {
-          const matchesSelectedColumns = filterColumns.some((filterColumn) => {
-            const target = readCellText(row, filterColumn).toLowerCase();
-            return target.includes(filterValue);
-          });
-          if (!matchesSelectedColumns) {
-            return false;
-          }
-        }
+  const wireAdminControls = (table, tabulator) => {
+    if (!table.matches("[data-admin-table]")) return;
+    const search = document.querySelector("[data-admin-search]");
+    const columns = document.querySelector("[data-admin-column-filter]");
+    const value = document.querySelector("[data-admin-column-value]");
+    const apply = () => {
+      const needle = cleanText(search?.value).toLowerCase();
+      const columnNeedle = cleanText(value?.value).toLowerCase();
+      const indexes = selectedValues(columns).map(Number);
+      tabulator.setFilter((data) => {
+        if (needle && !data._search.includes(needle)) return false;
+        if (columnNeedle && indexes.length && !indexes.some((index) => data[`_text_${index}`].includes(columnNeedle))) return false;
         return true;
       });
-
-      const type = inferValueType(filteredRows.map((row) => readCellText(row, sortIndex)));
-      filteredRows.sort((left, right) => {
-        let leftValue = readCellText(left, sortIndex);
-        let rightValue = readCellText(right, sortIndex);
-        if (type === "number") {
-          leftValue = Number(leftValue.replace(/[^0-9.\-]/g, ""));
-          rightValue = Number(rightValue.replace(/[^0-9.\-]/g, ""));
-        } else if (type === "date") {
-          leftValue = Date.parse(leftValue || "9999-12-31");
-          rightValue = Date.parse(rightValue || "9999-12-31");
-        } else {
-          leftValue = leftValue.toLowerCase();
-          rightValue = rightValue.toLowerCase();
-        }
-        if (leftValue < rightValue) {
-          return sortDirection === "asc" ? -1 : 1;
-        }
-        if (leftValue > rightValue) {
-          return sortDirection === "asc" ? 1 : -1;
-        }
-        return 0;
-      });
-
-      for (const row of allRows) {
-        row.remove();
-      }
-      for (const row of filteredRows) {
-        body.appendChild(row);
-      }
     };
+    [search, value].forEach((control) => control?.addEventListener("input", (event) => {
+      event.stopImmediatePropagation(); apply();
+    }, {capture: true}));
+    columns?.addEventListener("change", (event) => {
+      event.stopImmediatePropagation(); apply();
+    }, {capture: true});
+    document.querySelector("[data-admin-reset]")?.addEventListener("click", (event) => {
+      event.stopImmediatePropagation();
+      if (search) search.value = "";
+      if (value) value.value = "";
+      clearSelections(columns);
+      tabulator.clearFilter(true);
+      tabulator.clearSort();
+    }, {capture: true});
+  };
 
-    for (const column of sortableColumns) {
-      const label = column.label;
-      column.cell.innerHTML = "";
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "btn btn-link btn-sm p-0 text-decoration-none";
-      button.textContent = label;
-      button.addEventListener("click", () => {
-        if (sortIndex === column.index) {
-          sortDirection = sortDirection === "asc" ? "desc" : "asc";
-        } else {
-          sortIndex = column.index;
-          sortDirection = "asc";
-        }
-        renderRows();
-      });
-      column.cell.appendChild(button);
+  const wireTenderControls = (table, tabulator, prefix) => {
+    const search = document.querySelector(`[data-${prefix}-search]`);
+    const status = document.querySelector(`[data-${prefix}-status-filter]`);
+    const date = document.querySelector(`[data-${prefix}-date-filter]`);
+    const rows = tabulator.getData();
+    const statuses = [...new Set(rows.map((row) => row._status).filter(Boolean))].sort();
+    if (status && status.options.length === 1) {
+      statuses.forEach((label) => status.add(new Option(label, label)));
     }
+    const apply = () => {
+      const needle = cleanText(search?.value).toLowerCase();
+      const wantedStatuses = selectedValues(status);
+      const wantedDates = selectedValues(date);
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const nextThirty = new Date(today); nextThirty.setDate(today.getDate() + 30);
+      tabulator.setFilter((data) => {
+        if (needle && !data._search.includes(needle)) return false;
+        if (wantedStatuses.length && !wantedStatuses.includes(data._status)) return false;
+        if (!wantedDates.length) return true;
+        const rowDate = data._date ? new Date(`${data._date}T00:00:00`) : null;
+        return wantedDates.some((filter) => (
+          (filter === "with-date" && rowDate) ||
+          (filter === "without-date" && !rowDate) ||
+          (filter === "overdue" && rowDate && rowDate < today) ||
+          (filter === "next-30" && rowDate && rowDate >= today && rowDate <= nextThirty)
+        ));
+      });
+    };
+    search?.addEventListener("input", (event) => {
+      event.stopImmediatePropagation(); apply();
+    }, {capture: true});
+    status?.addEventListener("change", (event) => {
+      event.stopImmediatePropagation(); apply();
+    }, {capture: true});
+    date?.addEventListener("change", (event) => {
+      event.stopImmediatePropagation(); apply();
+    }, {capture: true});
+    document.querySelector(`[data-${prefix}-reset]`)?.addEventListener("click", (event) => {
+      event.stopImmediatePropagation();
+      if (search) search.value = "";
+      clearSelections(status); clearSelections(date);
+      tabulator.clearFilter(true); tabulator.clearSort();
+    }, {capture: true});
+  };
 
-    controls = buildControls(table, columns, renderRows);
-    renderRows();
+  const enhanceTable = (table, index) => {
+    const header = table.tHead?.rows?.[0];
+    const body = table.tBodies?.[0];
+    if (!header || !body) return;
+    const cells = Array.from(header.cells);
+    const sourceRows = Array.from(body.rows);
+    const data = sourceRows.map((row, rowIndex) => {
+      const record = {id: rowIndex, _search: cleanText(row.textContent).toLowerCase()};
+      Array.from(row.cells).forEach((cell, cellIndex) => {
+        record[`cell_${cellIndex}`] = cell.innerHTML;
+        record[`_text_${cellIndex}`] = cleanText(cell.textContent).toLowerCase();
+      });
+      record._class = row.className;
+      record._status = row.dataset.status || "";
+      record._date = row.dataset.submissionDate || "";
+      return record;
+    });
+    const columns = cells.map((cell, cellIndex) => {
+      const title = cleanText(cell.textContent);
+      return {
+        title,
+        field: `cell_${cellIndex}`,
+        formatter: "html",
+        headerSort: Boolean(title) && title.toLowerCase() !== "actions",
+        sorter: (left, right) => htmlText(left).localeCompare(htmlText(right), undefined, {numeric: true, sensitivity: "base"}),
+        minWidth: title.toLowerCase() === "actions" || !title ? 180 : 130,
+        variableHeight: true,
+      };
+    });
+    const replacement = document.createElement("div");
+    replacement.id = `tabulator-table-${index}`;
+    replacement.className = "tender-tabulator";
+    const wrapper = table.closest(".table-responsive");
+    table._tabulatorWrapper = wrapper;
+    table.replaceWith(replacement);
+    wrapper?.classList.add("tabulator-responsive");
+
+    const tabulator = new Tabulator(replacement, {
+      data,
+      columns,
+      layout: "fitDataStretch",
+      pagination: data.length > 10,
+      paginationSize: 10,
+      paginationSizeSelector: [10, 25, 50, 100],
+      placeholder: "No records found",
+      movableColumns: true,
+      rowFormatter: (row) => {
+        const className = row.getData()._class;
+        if (className) row.getElement().classList.add(...className.split(/\s+/).filter(Boolean));
+      },
+    });
+    addGenericControls(table, tabulator);
+    wireAdminControls(table, tabulator);
+    if (table.matches("[data-dashboard-table]")) wireTenderControls(table, tabulator, "dashboard");
+    if (table.matches("[data-tenders-table]")) wireTenderControls(table, tabulator, "tenders");
   };
 
   document.addEventListener("DOMContentLoaded", () => {
+    if (typeof Tabulator === "undefined") return;
     document.querySelectorAll("table").forEach(enhanceTable);
   });
 })();
