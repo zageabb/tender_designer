@@ -20,7 +20,7 @@ os.environ["SECRET_KEY"] = "test-secret"
 
 from app import create_app  # noqa: E402
 from database import db  # noqa: E402
-from models import Tender, TenderItem, TenderSubItem, WorkerLease  # noqa: E402
+from models import MailboxAttachment, MailboxMessage, MailboxTenderLink, Tender, TenderDocument, TenderItem, TenderSubItem, WorkerLease  # noqa: E402
 from routes.computer_finder import _conversation_search_spec  # noqa: E402
 from services.agentic_web_search import (  # noqa: E402
     DDGSSearchProvider,
@@ -406,7 +406,7 @@ class UpgradeTestCase(unittest.TestCase):
             mailbox_jobs._worker_thread = original_thread
             mailbox_jobs._worker_started = original_started
 
-    def test_mailbox_tender_dropdown_only_shows_active_tenders(self) -> None:
+    def test_mailbox_tender_dropdown_includes_active_and_submitted_tenders(self) -> None:
         with self.app.app_context():
             db.session.add_all(
                 [
@@ -422,7 +422,7 @@ class UpgradeTestCase(unittest.TestCase):
         body = self.client.get("/mailbox/compose").get_data(as_text=True)
 
         self.assertIn("MAIL-ACTIVE", body)
-        self.assertNotIn("MAIL-SUBMITTED", body)
+        self.assertIn("MAIL-SUBMITTED", body)
         self.assertNotIn("MAIL-AWARDED", body)
         self.assertNotIn("MAIL-CANCELLED", body)
 
@@ -444,6 +444,51 @@ class UpgradeTestCase(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 mailbox_service.archive_mailbox_message(message)
         self.assertEqual(message.mailbox_folder, "INBOX")
+
+    def test_linked_mailbox_archive_copy_is_complete_and_idempotent(self) -> None:
+        with self.app.app_context():
+            data_dir = self.app.config["DATA_DIR"]
+            tender = Tender(customer_name="Archive Customer", tender_number="ARCHIVE-1", status="Submitted")
+            message = MailboxMessage(
+                provider_message_id="<archive-copy@example.com>",
+                mailbox_folder="INBOX",
+                subject="Archive copy",
+                sender_email="sender@example.com",
+                recipient_emails="buyer@example.com",
+                body_text="Keep this email with the tender.",
+                received_at=datetime(2026, 8, 11, 9, 0),
+            )
+            db.session.add_all([tender, message])
+            db.session.flush()
+            message_dir = data_dir / "mailbox" / str(message.id)
+            message_dir.mkdir(parents=True, exist_ok=True)
+            raw_path = message_dir / "message.eml"
+            raw_path.write_text("Subject: Archive copy\n\nKeep this email with the tender.", encoding="utf-8")
+            attachment_path = message_dir / "evidence.txt"
+            attachment_path.write_text("attachment evidence", encoding="utf-8")
+            message.raw_eml_path = str(raw_path)
+            message.attachments.append(
+                MailboxAttachment(
+                    original_filename="evidence.txt",
+                    stored_filename="evidence.txt",
+                    file_path=str(attachment_path),
+                    file_type="txt",
+                )
+            )
+            db.session.add(MailboxTenderLink(mailbox_message=message, tender=tender, notes="Linked."))
+            db.session.commit()
+
+            self.assertEqual(mailbox_service.copy_linked_mailbox_message_to_tenders(data_dir, message), 1)
+            db.session.flush()
+            self.assertEqual(mailbox_service.copy_linked_mailbox_message_to_tenders(data_dir, message), 1)
+            db.session.flush()
+
+            documents = TenderDocument.query.filter_by(tender_id=tender.id).all()
+            self.assertEqual(len(documents), 3)
+            self.assertEqual(
+                {document.file_type for document in documents},
+                {"md", "eml", "txt"},
+            )
         self.assertFalse(message.is_read)
 
     def test_mailbox_archive_updates_local_state_after_remote_success(self) -> None:

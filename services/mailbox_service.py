@@ -698,6 +698,11 @@ def _build_body_document_name(mailbox_message: MailboxMessage) -> str:
     return f"email_{timestamp}_body.md"
 
 
+def _build_eml_document_name(mailbox_message: MailboxMessage) -> str:
+    timestamp = mailbox_message.received_at.strftime("%Y%m%d%H%M%S") if mailbox_message.received_at else "undated"
+    return f"email_{timestamp}_{mailbox_message.id}.eml"
+
+
 def _mailbox_message_body_markdown(mailbox_message: MailboxMessage) -> str:
     lines = [
         "# Email",
@@ -713,11 +718,15 @@ def _mailbox_message_body_markdown(mailbox_message: MailboxMessage) -> str:
 
 
 def _create_body_document(data_dir: Path, tender: Tender, mailbox_message: MailboxMessage) -> None:
+    original_filename = _build_body_document_name(mailbox_message)
+    existing = TenderDocument.query.filter_by(tender_id=tender.id, original_filename=original_filename).first()
+    if existing is not None:
+        return
     content = _mailbox_message_body_markdown(mailbox_message).encode("utf-8")
     original_name, stored_name, saved_path = save_tender_bytes(
         data_dir,
         tender.id,
-        _build_body_document_name(mailbox_message),
+        original_filename,
         content,
     )
     db.session.add(
@@ -734,8 +743,40 @@ def _create_body_document(data_dir: Path, tender: Tender, mailbox_message: Mailb
     )
 
 
+def _create_eml_document(data_dir: Path, tender: Tender, mailbox_message: MailboxMessage) -> None:
+    original_filename = _build_eml_document_name(mailbox_message)
+    existing = TenderDocument.query.filter_by(tender_id=tender.id, original_filename=original_filename).first()
+    if existing is not None or not mailbox_message.raw_eml_path:
+        return
+    try:
+        source_path = resolve_managed_path(data_dir, mailbox_message.raw_eml_path, must_exist=True)
+    except ManagedPathError:
+        return
+    original_name, stored_name, saved_path = save_tender_bytes(
+        data_dir, tender.id, original_filename, source_path.read_bytes()
+    )
+    db.session.add(
+        TenderDocument(
+            tender=tender,
+            original_filename=original_name,
+            stored_filename=stored_name,
+            file_path=str(saved_path),
+            file_type="eml",
+            extracted_text=_mailbox_message_body_markdown(mailbox_message),
+            processed=True,
+            processing_notes=f"Archived mailbox email copy for message {mailbox_message.id}.",
+        )
+    )
+
+
 def _import_mailbox_attachments(data_dir: Path, tender: Tender, mailbox_message: MailboxMessage) -> None:
     for attachment in mailbox_message.attachments:
+        existing = TenderDocument.query.filter_by(
+            tender_id=tender.id,
+            original_filename=attachment.original_filename,
+        ).first()
+        if existing is not None:
+            continue
         try:
             path = resolve_managed_path(data_dir, attachment.file_path or "", must_exist=True)
         except ManagedPathError:
@@ -771,14 +812,22 @@ def link_mailbox_message_to_tender(mailbox_message: MailboxMessage, tender: Tend
 
 
 def import_mailbox_message_to_tender(data_dir: Path, mailbox_message: MailboxMessage, tender: Tender) -> MailboxTenderLink:
-    existing_link = link_mailbox_message_to_tender(mailbox_message, tender, notes="Imported from mailbox.")
-    if existing_link.id is not None:
-        return existing_link
+    link = link_mailbox_message_to_tender(mailbox_message, tender, notes="Imported from mailbox.")
     ensure_tender_directories(data_dir, tender.id)
-    tender.notes = "\n\n".join(part for part in [tender.notes, mailbox_message.body_text] if part).strip() or None
+    if mailbox_message.body_text and mailbox_message.body_text not in (tender.notes or ""):
+        tender.notes = "\n\n".join(part for part in [tender.notes, mailbox_message.body_text] if part).strip() or None
     _create_body_document(data_dir, tender, mailbox_message)
+    _create_eml_document(data_dir, tender, mailbox_message)
     _import_mailbox_attachments(data_dir, tender, mailbox_message)
-    return existing_link
+    return link
+
+
+def copy_linked_mailbox_message_to_tenders(data_dir: Path, mailbox_message: MailboxMessage) -> int:
+    copied_to = 0
+    for link in mailbox_message.tender_links:
+        import_mailbox_message_to_tender(data_dir, mailbox_message, link.tender)
+        copied_to += 1
+    return copied_to
 
 
 def create_tender_from_mailbox_message(data_dir: Path, mailbox_message: MailboxMessage) -> Tender:
