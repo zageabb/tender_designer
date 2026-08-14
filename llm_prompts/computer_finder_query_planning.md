@@ -27,7 +27,6 @@ Rules for `queries`:
 - Prefer search-native phrases such as business laptop, datasheet, specification, configurable, Ethernet, LAN port, onsite warranty, Windows Autopilot, and hardware hash.
 - Quote exact short requirements when useful, such as `"15.6"`, `"16GB"`, `"512GB SSD"`, or `"Windows 11 Pro"`.
 - Use CPU alternatives separately where that helps, for example one Intel query and one Ryzen query.
-- Include likely business product families only as generic search terms, such as ProBook, EliteBook, Latitude, ThinkPad, ExpertBook, TravelMate, or Vostro.
 Do not include `site:` filters; the application adds those for each configured website.
 Do not include configured domain names such as `dell.com`, `hp.com`, or `lenovo.com` in the query text.
 Do not use words like `search` or `site`.
