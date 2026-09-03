@@ -20,7 +20,7 @@
         <a class="navbar-brand brand-lockup" href="{{ url_for('dashboard.index') }}" aria-label="Tender Designer version {{ app_version }}">
           <span class="brand-mark">TD</span>
           <span>Tender Designer</span>
-          <span class="badge rounded-pill text-bg-light ms-1">v{{ app_version }}</span>
+          <span class="badge rounded-pill text-bg-light ms-1" title="Tender Designer version {{ app_version }}">v{{ app_version }}</span>
         </a>
         <div class="navbar-nav gap-lg-2">
           {% if current_user.is_authenticated %}
