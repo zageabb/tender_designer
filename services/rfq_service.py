@@ -5,6 +5,7 @@ from pathlib import Path
 
 from models import RFQ, RFQLine, Tender, TenderItem, TenderSubItem
 from services.file_storage import ensure_tender_directories
+from services.markdown_tools import render_markdown_html
 from services.prompt_service import render_prompt, render_template_text
 from services.settings_service import get_setting
 
@@ -128,6 +129,27 @@ def _render_line_items_table(lines: list[dict]) -> str:
     return _clean_rendered_block(table_block)
 
 
+def _render_rfq_email_html(body: str) -> str:
+    html = str(render_markdown_html(body))
+    html = html.replace(
+        '<table class="table table-sm table-bordered markdown-table">',
+        '<table style="border-collapse:collapse;width:100%;max-width:100%;margin:16px 0;font-family:Arial,sans-serif;font-size:14px;">',
+    )
+    html = html.replace(
+        "<th>",
+        '<th style="border:1px solid #b8c2cc;padding:8px 10px;text-align:left;vertical-align:top;background:#f3f5f7;font-weight:600;">',
+    )
+    html = html.replace(
+        "<td>",
+        '<td style="border:1px solid #b8c2cc;padding:8px 10px;text-align:left;vertical-align:top;">',
+    )
+    return (
+        '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#222;">'
+        f"{html}"
+        "</div>"
+    )
+
+
 def build_rfq_email_text(tender: Tender, supplier_name: str, lines: list[dict]) -> tuple[str, str]:
     signature = get_setting("default_email_signature", "") or ""
     subject = f"RFI - {tender.tender_number} - {tender.customer_name}"
@@ -242,6 +264,7 @@ def write_rfq_eml(data_dir: Path, tender: Tender, rfq: RFQ, body: str) -> Path:
         message["To"] = rfq.supplier_email
     message["From"] = "noreply@tenderdesigner.local"
     message.set_content(body)
+    message.add_alternative(_render_rfq_email_html(body), subtype="html")
     destination = rfq_dir / f"rfq_{rfq.id}.eml"
     destination.write_bytes(message.as_bytes())
     return destination
