@@ -31,8 +31,8 @@ def test_default_version_is_visible_in_shared_navigation():
 
     assert response.status_code == 200
     assert "Tender Designer" in body
-    assert "v0.1.0" in body
-    assert app.config["APP_VERSION"] == "0.1.0"
+    assert "v0.1.1" in body
+    assert app.config["APP_VERSION"] == "0.1.1"
 
 
 def test_config_version_override_is_visible():
