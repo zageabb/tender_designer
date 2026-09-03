@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import threading
 import uuid
 from copy import deepcopy
@@ -20,6 +21,11 @@ def _now_iso() -> str:
     return datetime.utcnow().isoformat(timespec="seconds") + "Z"
 
 
+def _equipment_allowed_sites_only() -> bool:
+    value = os.environ.get("TENDER_RESEARCH_ALLOWED_SITES_ONLY", "0")
+    return value.strip().lower() in {"1", "true", "yes", "on", "enabled"}
+
+
 def create_computer_finder_job(
     app: Flask,
     computer_spec: str,
@@ -27,6 +33,12 @@ def create_computer_finder_job(
     use_allowed_websites: bool = True,
     model: str | None = None,
 ) -> dict:
+    if mode != "general":
+        # The legacy Computer Finder route forces its supplier-domain allowlist.
+        # Equipment Research is broader by design, so use the open web unless
+        # the deployment explicitly opts back into configured-sites-only mode.
+        use_allowed_websites = _equipment_allowed_sites_only()
+
     job_id = uuid.uuid4().hex
     job = {
         "id": job_id,
