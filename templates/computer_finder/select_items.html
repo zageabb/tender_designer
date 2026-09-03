@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Select Computer Finder Items | Tender Designer{% endblock %}
+{% block title %}Select Equipment Research Items | Tender Designer{% endblock %}
 {% block content %}
 <section class="hero-card mb-4">
   <div>
-    <span class="eyebrow">Product Research</span>
+    <span class="eyebrow">Technical Equipment Research</span>
     <h1 class="display-title">Choose items to research</h1>
-    <p class="hero-copy mb-0">Select the tender lines you want Computer Finder to use as its starting requirements.</p>
+    <p class="hero-copy mb-0">Select the tender lines you want Equipment Research to use as its starting technical requirements.</p>
   </div>
   <div class="hero-metric">
     <span class="hero-metric-label">Tender</span>
@@ -45,12 +45,12 @@
       {% endif %}
     </div>
     {% else %}
-    <p class="text-muted mb-0">Add or extract items before using Computer Finder.</p>
+    <p class="text-muted mb-0">Add or extract items before using Equipment Research.</p>
     {% endfor %}
   </div>
   <div class="card-footer d-flex justify-content-between">
     <a class="btn btn-outline-secondary" href="{{ url_for('tenders.detail_tender', tender_id=tender.id) }}">Back to Tender</a>
-    <button class="btn btn-primary" type="submit" {% if not tender.items %}disabled{% endif %}>Open Computer Finder</button>
+    <button class="btn btn-primary" type="submit" {% if not tender.items %}disabled{% endif %}>Open Equipment Research</button>
   </div>
 </form>
 {% endblock %}

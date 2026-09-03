@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Research Chat | Tender Designer{% endblock %}
+{% block title %}Equipment Research | Tender Designer{% endblock %}
 {% block content %}
 <section class="hero-card mb-4">
   <div>
-    <span class="eyebrow">Conversational Product Research</span>
-    <h1 class="display-title" id="research-page-title">Computer Finder</h1>
-    <p class="hero-copy mb-0" id="research-page-description">Research selected tender items, then refine the recommendation with follow-up requirements.</p>
+    <span class="eyebrow">Technical Equipment Research</span>
+    <h1 class="display-title" id="research-page-title">Equipment Research</h1>
+    <p class="hero-copy mb-0" id="research-page-description">Find equipment against tender technical requirements, compare compliance, and keep commercial data separate from the technical match.</p>
   </div>
   {% if tender %}
   <div class="hero-actions">
@@ -20,25 +20,25 @@
   id="computer-finder-workspace"
   data-search-url="{{ url_for('computer_finder.search') }}"
   data-search-status-url="{{ url_for('computer_finder.search_status', job_id='JOB_ID') }}"
-  data-storage-key="computer-finder:{% if tender %}{{ tender.id }}:{% for item in selected_items %}i{{ item.id }}-{% endfor %}{% for sub_item in selected_sub_items %}s{{ sub_item.id }}-{% endfor %}{% else %}standalone{% endif %}"
+  data-storage-key="equipment-research:{% if tender %}{{ tender.id }}:{% for item in selected_items %}i{{ item.id }}-{% endfor %}{% for sub_item in selected_sub_items %}s{{ sub_item.id }}-{% endfor %}{% else %}standalone{% endif %}"
 >
   <div class="card-header d-flex justify-content-between align-items-center gap-3 flex-wrap">
     <div>
-      <div>{% if tender %}{{ tender.tender_number }} — {{ tender.customer_name }}{% else %}Standalone research{% endif %}</div>
+      <div>{% if tender %}{{ tender.tender_number }} — {{ tender.customer_name }}{% else %}Standalone equipment research{% endif %}</div>
       <div class="small text-muted fw-normal">
         {% if selected_items or selected_sub_items %}
         {{ selected_items|length + selected_sub_items|length }} selected tender line(s)
         {% else %}
-        Add a starting specification below
+        Add starting technical requirements below
         {% endif %}
       </div>
     </div>
-    <span class="badge text-bg-light">Live web research</span>
+    <span class="badge text-bg-light">Evidence-led web research</span>
   </div>
   <div class="card-body p-0">
     <div class="computer-finder-requirements border-bottom p-3">
-      <label class="form-label fw-semibold" id="research-request-label" for="computer-finder-base-spec">Starting requirements</label>
-      <textarea class="form-control" id="computer-finder-base-spec" rows="6" placeholder="Describe the products, quantities, technical requirements, warranty and budget.">{{ selected_spec }}</textarea>
+      <label class="form-label fw-semibold" id="research-request-label" for="computer-finder-base-spec">Tender / equipment requirements</label>
+      <textarea class="form-control" id="computer-finder-base-spec" rows="6" placeholder="Describe the equipment, quantity, ratings, standards, configuration and mandatory technical requirements.">{{ selected_spec }}</textarea>
       {% if selected_items or selected_sub_items %}
       <div class="d-flex gap-2 flex-wrap mt-2">
         {% for item in selected_items %}<span class="badge text-bg-light">{{ item.description }}</span>{% endfor %}
@@ -51,19 +51,20 @@
     <div class="computer-finder-main">
     <div id="computer-finder-conversation" class="computer-finder-conversation" aria-live="polite">
       <div class="finder-message finder-message-assistant">
-        <div class="finder-message-label" id="research-welcome-label">Computer Finder</div>
-        <div id="research-welcome-copy">Tell me what matters most, or start the search using the selected tender requirements. After each result you can ask for changes such as a lower budget, a different processor, extra warranty, or alternatives from another supplier.</div>
+        <div class="finder-message-label" id="research-welcome-label">Equipment Research</div>
+        <div id="research-welcome-copy">Start with the selected tender requirements or enter a standalone equipment specification. The research agent will look for manufacturer, datasheet, catalogue and procurement evidence, compare technical compliance, and mark unsupported requirements as unknown instead of guessing.</div>
       </div>
     </div>
 
     <form id="computer-finder-form" class="computer-finder-composer border-top p-3">
       <label class="form-label fw-semibold" for="computer-finder-instruction">Search or refine</label>
-      <textarea class="form-control" id="computer-finder-instruction" rows="3" placeholder="Example: Prioritise models under £900 with a three-year onsite warranty."></textarea>
+      <textarea class="form-control" id="computer-finder-instruction" rows="3" placeholder="Example: Treat 25 kA as mandatory, prefer OEM datasheets, and flag anything only supported at product-family level."></textarea>
       <div class="d-flex gap-2 flex-wrap mt-3">
-        <button class="btn btn-primary btn-lg" id="computer-finder-submit" type="submit">Search Selected Items</button>
-        <button class="btn btn-outline-primary btn-lg" id="computer-finder-spec-auto" type="button">Find &amp; Generate Spec</button>
+        <button class="btn btn-primary btn-lg" id="computer-finder-submit" type="submit">Search Equipment</button>
+        <button class="btn btn-outline-primary btn-lg" id="computer-finder-spec-auto" type="button">Generate IT Spec Sheet</button>
         <button class="btn btn-outline-secondary btn-lg" id="computer-finder-clear" type="button">New Conversation</button>
       </div>
+      <p class="small text-muted mt-2 mb-0">Technical compliance is ranked independently of price. The IT specification-sheet action remains available for computer procurements.</p>
     </form>
     </div>
     <aside class="computer-finder-runtime" aria-live="polite">
@@ -95,14 +96,14 @@
   data-spec-export-url="{{ url_for('computer_finder.export_specification_sheet') }}"
   data-spec-attach-url="{{ url_for('computer_finder.attach_specification_sheet') }}"
 >
-  <div class="card-header">Use latest research result</div>
+  <div class="card-header">Use latest equipment research result</div>
   <div class="card-body">
     <div class="row g-2 align-items-end">
       <div class="col-md-2">
         <button class="btn btn-outline-secondary w-100" id="computer-finder-download" type="button">Research .md</button>
       </div>
       <div class="col-md-2">
-        <button class="btn btn-outline-primary w-100" id="computer-finder-spec-download" type="button">Spec Sheet .docx</button>
+        <button class="btn btn-outline-primary w-100" id="computer-finder-spec-download" type="button">IT Spec .docx</button>
       </div>
       <div class="col-md-4">
         <label class="form-label fw-semibold" for="computer-finder-tender">Save result to tender</label>
@@ -119,7 +120,7 @@
         <button class="btn btn-outline-secondary w-100" id="computer-finder-attach" type="button">Save Research</button>
       </div>
       <div class="col-md-2">
-        <button class="btn btn-primary w-100" id="computer-finder-spec-attach" type="button">Add Spec To Tender</button>
+        <button class="btn btn-primary w-100" id="computer-finder-spec-attach" type="button">Add IT Spec</button>
       </div>
     </div>
     <div class="small mt-2" id="computer-finder-save-status"></div>
@@ -179,6 +180,9 @@
           <input class="form-control" id="computer-finder-city" name="computer_finder_market_city" value="{{ finder_settings.computer_finder_market_city }}">
         </div>
       </div>
+      <div class="alert alert-light border mt-3 mb-0 small">
+        Dynamic-page fallback is bounded and only used when lightweight HTML does not contain enough technical evidence. PDF datasheets are read directly. Runtime controls are available through <code>TENDER_RESEARCH_BROWSER_*</code> environment variables.
+      </div>
       <button class="btn btn-outline-primary mt-3" id="computer-finder-settings-submit" type="submit">Save Search Settings</button>
       <span class="small text-muted ms-2" id="computer-finder-domain-summary">Active: {{ allowed_domains|length }} allowed, {{ blocked_domains|length }} blocked.</span>
     </form>
@@ -186,8 +190,8 @@
     <hr class="my-4">
     <form id="computer-finder-prompts-form" data-prompts-url="{{ url_for('computer_finder.update_prompts') }}">
       <div class="mb-3">
-        <h2 class="h5 mb-1">Computer Finder instructions</h2>
-        <p class="text-muted mb-0">Live instructions for planning hardware searches and turning evidence into recommendations.</p>
+        <h2 class="h5 mb-1" id="equipment-research-prompt-heading">Equipment Research instructions</h2>
+        <p class="text-muted mb-0" id="equipment-research-prompt-copy">Live instructions for technical requirement parsing, evidence-led equipment searches and compliance comparison.</p>
       </div>
       {% for prompt in finder_prompts %}
       <div class="mb-3">
@@ -202,7 +206,7 @@
         >{{ prompt.content }}</textarea>
       </div>
       {% endfor %}
-      <button class="btn btn-outline-primary" id="computer-finder-prompts-submit" type="submit">Save Finder Instructions</button>
+      <button class="btn btn-outline-primary" id="computer-finder-prompts-submit" type="submit">Save Equipment Research Instructions</button>
       <span class="small text-muted ms-2" id="computer-finder-prompts-status"></span>
     </form>
   </div>
@@ -211,4 +215,5 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/computer_finder.js') }}"></script>
+<script src="{{ url_for('static', filename='js/equipment_research_ui.js') }}"></script>
 {% endblock %}

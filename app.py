@@ -32,6 +32,7 @@ from services.tender_monitor import start_tender_monitor_worker
 login_manager = LoginManager()
 csrf = CSRFProtect()
 migrate = Migrate()
+DEFAULT_APP_VERSION = "0.1.0"
 
 
 def create_app(config_overrides: dict | None = None) -> Flask:
@@ -39,6 +40,12 @@ def create_app(config_overrides: dict | None = None) -> Flask:
     app.config.from_object(Config)
     if config_overrides:
         app.config.update(config_overrides)
+    app_version = str(
+        app.config.get("APP_VERSION")
+        or os.environ.get("TENDER_DESIGNER_VERSION")
+        or DEFAULT_APP_VERSION
+    ).strip() or DEFAULT_APP_VERSION
+    app.config["APP_VERSION"] = app_version
     if app.config.get("PRODUCTION_MODE"):
         missing = []
         if not os.environ.get("SECRET_KEY"):
@@ -65,6 +72,7 @@ def create_app(config_overrides: dict | None = None) -> Flask:
             apply_schema_migrations()
             ensure_default_settings(db)
     app.jinja_env.globals["render_markdown_html"] = render_markdown_html
+    app.jinja_env.globals["app_version"] = app_version
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboard_bp)
