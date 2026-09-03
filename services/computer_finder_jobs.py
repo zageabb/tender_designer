@@ -9,7 +9,7 @@ from typing import Callable
 from flask import Flask
 
 from services.computer_finder_service import ComputerFinderConfigError, find_computer_for_spec
-from services.enhanced_equipment_reader import install_enhanced_equipment_reader
+from services.equipment_research_agent import install_equipment_research
 
 
 _jobs: dict[str, dict] = {}
@@ -109,7 +109,7 @@ def _run_job(
     progress({"kind": "phase", "status": "running", "label": "Planning targeted searches", "phase": "Planning research"})
     try:
         with app.app_context():
-            install_enhanced_equipment_reader()
+            install_equipment_research()
             result = find_computer_for_spec(
                 computer_spec,
                 progress_callback=progress,
