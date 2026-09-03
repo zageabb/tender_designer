@@ -27,8 +27,9 @@ jobs:
 
       - name: Run tests
         env:
+          PYTHONPATH: .
           SECRET_KEY: test-secret-key
           ADMIN_USERNAME: test-admin
           ADMIN_PASSWORD: test-password
           TENDER_RESEARCH_BROWSER_FALLBACK: "0"
-        run: pytest -q
+        run: python -m pytest -q
