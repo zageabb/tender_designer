@@ -24,6 +24,13 @@ DEFAULT_COMPUTER_FINDER_DOMAINS = "\n".join(
     ]
 )
 
+LEGACY_MARKET_COUNTRY_DESCRIPTION = (
+    "Default procurement country for computer finder searches, using a two-letter country code."
+)
+EQUIPMENT_RESEARCH_MARKET_COUNTRY_DESCRIPTION = (
+    "Default procurement country for Equipment Research searches, using a two-letter country code such as GB, US, CA, AU, or IE."
+)
+
 DEFAULT_SETTINGS = {
     "ollama_url": {
         "value": "http://192.168.1.249:11434",
@@ -115,7 +122,7 @@ DEFAULT_SETTINGS = {
     },
     "mail_auto_sync_interval_minutes": {
         "value": "10",
-        "description": "How often the scheduler should queue a background mailbox sync job.",
+        "description": "How often the scheduler should queue mailbox background sync jobs.",
     },
     "tender_warning_admin_emails": {
         "value": "abbot.server@gmail.com",
@@ -170,8 +177,8 @@ DEFAULT_SETTINGS = {
         "description": "Optional website domains to exclude from computer finder web searches.",
     },
     "computer_finder_market_country": {
-        "value": "US",
-        "description": "Default procurement country for computer finder searches, using a two-letter country code.",
+        "value": "GB",
+        "description": EQUIPMENT_RESEARCH_MARKET_COUNTRY_DESCRIPTION,
     },
     "computer_finder_market_region": {
         "value": "",
@@ -195,10 +202,10 @@ TASK_MODEL_SETTING_KEYS = {
 
 
 def ensure_default_settings(db) -> None:
-    existing_keys = {setting.key for setting in AppSetting.query.all()}
+    existing_settings = {setting.key: setting for setting in AppSetting.query.all()}
     changed = False
     for key, payload in DEFAULT_SETTINGS.items():
-        if key not in existing_keys:
+        if key not in existing_settings:
             db.session.add(
                 AppSetting(
                     key=key,
@@ -207,6 +214,14 @@ def ensure_default_settings(db) -> None:
                 )
             )
             changed = True
+
+    market_country = existing_settings.get("computer_finder_market_country")
+    if market_country is not None and market_country.description == LEGACY_MARKET_COUNTRY_DESCRIPTION:
+        if (market_country.value or "").strip().upper() == "US":
+            market_country.value = "GB"
+        market_country.description = EQUIPMENT_RESEARCH_MARKET_COUNTRY_DESCRIPTION
+        changed = True
+
     if changed:
         db.session.commit()
 
