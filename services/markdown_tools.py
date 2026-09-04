@@ -31,9 +31,17 @@ def extracted_text_suffix(text: str | None) -> str:
     return ".md" if looks_like_markdown(text) else ".txt"
 
 
+def _escape_with_safe_breaks(value: str) -> str:
+    parts = re.split(r"(<br\s*/?>)", value, flags=re.IGNORECASE)
+    return "".join(
+        "<br>" if re.fullmatch(r"<br\s*/?>", part, flags=re.IGNORECASE) else str(escape(part))
+        for part in parts
+        if part
+    )
+
+
 def _format_inline_markdown(value: str) -> str:
-    escaped = escape(value)
-    html = str(escaped)
+    html = _escape_with_safe_breaks(value)
     html = re.sub(r"`([^`]+)`", r"<code>\1</code>", html)
     html = re.sub(
         r"\[([^\]]+)\]\((https?://[^\s)]+)\)",
