@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from email.message import EmailMessage
 from pathlib import Path
 
@@ -29,6 +30,22 @@ def _format_value(value) -> str:
     if hasattr(value, "isoformat"):
         return value.isoformat()
     return str(value)
+
+
+def _format_markdown_table_cell(value) -> str:
+    """Keep multiline values inside one Markdown table row.
+
+    Markdown tables are line-oriented, so a raw newline inside a specification ends
+    the row and leaves the remaining specification outside column three. Preserve
+    the visual line breaks as safe ``<br>`` markers instead.
+    """
+    text = _format_value(value).replace("\r\n", "\n").replace("\r", "\n")
+    lines = text.split("\n")
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return "<br>".join(line.strip() for line in lines)
 
 
 def _line_template_context(item: TenderItem | None, sub_item: TenderSubItem | None) -> dict[str, str]:
@@ -117,9 +134,12 @@ def _render_line_items_table(lines: list[dict]) -> str:
     row_template = render_prompt("rfq_line_item_row")
     rows = []
     for line in lines:
+        context = dict(line["template_context"])
+        for key in ("line_quantity", "item_description", "line_description"):
+            context[key] = _format_markdown_table_cell(context.get(key, ""))
         rows.append(
             _clean_rendered_block(
-                render_template_text(row_template, **line["template_context"])
+                render_template_text(row_template, **context)
             )
         )
     table_block = render_prompt(
@@ -148,6 +168,11 @@ def _render_rfq_email_html(body: str) -> str:
         f"{html}"
         "</div>"
     )
+
+
+def _render_rfq_email_plain(body: str) -> str:
+    """Flatten HTML-only cell breaks without breaking the plain-text table row."""
+    return re.sub(r"<br\s*/?>", " / ", body, flags=re.IGNORECASE)
 
 
 def build_rfq_email_text(tender: Tender, supplier_name: str, lines: list[dict]) -> tuple[str, str]:
@@ -263,7 +288,7 @@ def write_rfq_eml(data_dir: Path, tender: Tender, rfq: RFQ, body: str) -> Path:
     if rfq.supplier_email:
         message["To"] = rfq.supplier_email
     message["From"] = "noreply@tenderdesigner.local"
-    message.set_content(body)
+    message.set_content(_render_rfq_email_plain(body))
     message.add_alternative(_render_rfq_email_html(body), subtype="html")
     destination = rfq_dir / f"rfq_{rfq.id}.eml"
     destination.write_bytes(message.as_bytes())
