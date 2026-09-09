@@ -66,7 +66,7 @@ DEFAULT_SETTINGS = {
     },
     "embedding_model": {
         "value": "nomic-embed-text",
-        "description": "Embedding model used for future RAG indexing.",
+        "description": "Embedding model used for RAG and semantic reranking of equipment-search candidates.",
     },
     "default_email_signature": {
         "value": "Kind regards,\nTender Designer Team",
@@ -154,15 +154,35 @@ DEFAULT_SETTINGS = {
     },
     "computer_finder_max_search_rounds": {
         "value": "3",
-        "description": "Maximum plan-search-read-refine rounds performed by the Ollama research agent.",
+        "description": "Manual-mode maximum plan-search-read-refine rounds performed by the research agent.",
     },
     "computer_finder_results_per_domain": {
         "value": "3",
-        "description": "Maximum site-restricted search results to collect from each configured website.",
+        "description": "Maximum search results collected for each query/domain pass.",
     },
     "computer_finder_max_pages_to_read": {
         "value": "8",
-        "description": "Maximum candidate web pages to fetch and summarise before asking Ollama for a recommendation.",
+        "description": "Manual-mode maximum candidate web pages to fetch before synthesis.",
+    },
+    "equipment_research_depth_mode": {
+        "value": "auto",
+        "description": "Equipment Research depth mode. Auto expands research only while useful technical evidence gaps remain; manual uses the legacy round/page limits.",
+    },
+    "equipment_research_initial_pages": {
+        "value": "8",
+        "description": "Initial number of highest-ranked candidate pages opened in automatic Equipment Research mode.",
+    },
+    "equipment_research_batch_pages": {
+        "value": "6",
+        "description": "Additional page batch size used when automatic Equipment Research identifies unresolved evidence gaps.",
+    },
+    "equipment_research_hard_page_cap": {
+        "value": "200",
+        "description": "Safety ceiling for page attempts in automatic Equipment Research mode. Research normally stops much earlier when coverage is sufficient.",
+    },
+    "equipment_research_hard_round_cap": {
+        "value": "8",
+        "description": "Safety ceiling for iterative search/read/gap-analysis rounds in automatic Equipment Research mode.",
     },
     "general_search_instructions": {
         "value": "You are a careful, neutral research assistant. Prefer primary and authoritative sources, explain uncertainty, and use concise Markdown unless the user asks for another style.",

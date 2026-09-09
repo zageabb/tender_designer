@@ -1,7 +1,10 @@
+from services.agentic_web_search import SearchResult
 from services.enhanced_equipment_reader import (
     _evidence_sufficient,
     _structured_product_text,
 )
+from services.equipment_research_agent import EquipmentResearchAgent
+from services.settings_service import DEFAULT_SETTINGS
 
 
 def test_structured_product_metadata_extracts_identity_and_ratings():
@@ -44,3 +47,47 @@ def test_evidence_sufficiency_is_based_on_technical_content_not_price():
 
     assert _evidence_sufficient(technical) is True
     assert _evidence_sufficient(commercial_only) is False
+
+
+def test_equipment_candidate_ranking_prefers_matching_datasheet(monkeypatch):
+    monkeypatch.setattr("services.equipment_research_agent.get_setting", lambda *args, **kwargs: "")
+    agent = EquipmentResearchAgent(
+        ollama_url="http://127.0.0.1:11434",
+        model="test-model",
+        search_provider=None,
+        page_reader=None,
+        allowed_domains=[],
+        blocked_domains=[],
+    )
+    candidates = [
+        SearchResult(
+            title="Generic switchgear accessories and spare parts",
+            url="https://example.com/accessories",
+            snippet="Accessories for medium-voltage equipment.",
+            query="12 kV 3150 A switchgear",
+        ),
+        SearchResult(
+            title="NX-12 switchgear technical datasheet PDF",
+            url="https://manufacturer.example/NX-12-datasheet.pdf",
+            snippet="Rated voltage 12 kV, rated current 3150 A, short-circuit rating 31.5 kA, IEC 62271-200.",
+            query="12 kV 3150 A 31.5 kA IEC 62271-200 switchgear datasheet",
+        ),
+    ]
+
+    ranked, diagnostics = agent._rank_candidates(
+        candidates,
+        "12 kV switchgear, 3150 A, 31.5 kA, IEC 62271-200",
+        {"mandatory": "12 kV; 3150 A; 31.5 kA; IEC 62271-200"},
+        ["Which exact model proves all mandatory ratings?"],
+    )
+
+    assert ranked[0].url.endswith("NX-12-datasheet.pdf")
+    assert any("Ranked 2 candidate" in row for row in diagnostics)
+
+
+def test_dynamic_equipment_research_defaults_are_quality_led():
+    assert DEFAULT_SETTINGS["equipment_research_depth_mode"]["value"] == "auto"
+    assert int(DEFAULT_SETTINGS["equipment_research_initial_pages"]["value"]) < int(
+        DEFAULT_SETTINGS["equipment_research_hard_page_cap"]["value"]
+    )
+    assert int(DEFAULT_SETTINGS["equipment_research_hard_page_cap"]["value"]) > 100
