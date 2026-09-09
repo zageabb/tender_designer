@@ -36,6 +36,28 @@ class OllamaClient:
         response.raise_for_status()
         return response.json().get("response", "").strip()
 
+    def embed_texts(self, model: str, texts: list[str]) -> list[list[float]]:
+        """Return Ollama embeddings for a batch of texts.
+
+        The research code treats embeddings as an optional quality improvement, so
+        callers are expected to fall back gracefully when the configured model is
+        unavailable on the local Ollama server.
+        """
+        clean_texts = [str(text or "")[:12000] for text in texts]
+        if not clean_texts:
+            return []
+        payload = {"model": model, "input": clean_texts}
+        response = requests.post(f"{self.base_url}/api/embed", json=payload, timeout=120)
+        response.raise_for_status()
+        rows = response.json().get("embeddings") or []
+        if not isinstance(rows, list) or len(rows) != len(clean_texts):
+            raise ValueError("Ollama returned an unexpected embedding response.")
+        return [
+            [float(value) for value in row]
+            for row in rows
+            if isinstance(row, list)
+        ]
+
     def list_models(self) -> list[str]:
         response = requests.get(f"{self.base_url}/api/tags", timeout=10)
         response.raise_for_status()
