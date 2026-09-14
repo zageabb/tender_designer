@@ -1,5 +1,31 @@
 # Tender Designer
 
+## Ubuntu server deployment
+
+Verified on **14 September 2026** against the listeners, user systemd services,
+Docker port mappings and deployment registry on `192.168.1.249`.
+
+| Endpoint | Host TCP port | LAN URL |
+|---|---:|---|
+| Application | 5050 | http://192.168.1.249:5050/ |
+
+Checkout: `/home/zageabb/ollama-chat/Tender_Designer`.
+
+These are **user** systemd units. Inspect them with:
+
+```bash
+systemctl --user status ollama-chat-tender-designer.service
+systemctl --user cat ollama-chat-tender-designer.service
+```
+
+Local verification URL: `http://127.0.0.1:5050/`. HTTP 200 was observed during this audit.
+
+Development defaults and container-internal ports elsewhere in this repository
+may differ from this host deployment. Use the live ports above when accessing
+this Ubuntu server; do not start a second copy on a port already occupied.
+
+[Complete Ubuntu port inventory](https://github.com/zageabb/universal-deployment-agent/blob/main/UBUNTU_PORTS.md).
+
 Tender Designer is a Flask application for managing tenders, uploaded documents, AI-assisted extraction, questions and answers, RFI email drafting, mailbox workflows, and admin correction screens.
 
 ## What The App Does
