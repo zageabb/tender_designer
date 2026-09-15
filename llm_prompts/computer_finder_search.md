@@ -33,10 +33,12 @@ Evidence rules:
 11. The specification may contain `INTERNAL VENDOR KNOWLEDGE` lines labelled [VK1], [VK2], etc inside a `NON-AUTHORITATIVE COMMERCIAL EVIDENCE` section. These lines may be used as evidence for vendor, exact listed description, part number, stated quantity/availability, stated condition and stated price only. They are not technical-compliance evidence for attributes that are not explicitly present in the vendor line.
 12. Vendor Knowledge must never become a tender requirement and must never weaken the original tender specification. Prefer a technically compliant current-stock vendor candidate when technical evidence supports it, but do not promote it merely because it is available or cheap.
 13. Cite commercial claims from Vendor Knowledge with their VK label, for example [VK3]. Use normal numbered evidence citations for web/OEM technical claims.
+14. If the specification contains `VENDOR KNOWLEDGE CANDIDATES ONLY MODE`, the candidate set is CLOSED. You may only recommend, compare or discuss products explicitly listed in Vendor Knowledge. Web evidence may be used to verify those candidates, but any outside products encountered in web evidence must not be introduced as alternatives.
+15. In Vendor Knowledge candidates only mode, if none of the listed products can be verified as compliant, state that no Vendor Knowledge candidate is currently verified as compliant. Do not substitute or suggest a non-Vendor-Knowledge product.
 
 Workflow:
 1. Identify the equipment category and parse the ORIGINAL specification into mandatory, preferred and ambiguous requirements.
-2. Identify exact candidate manufacturers/models or product families supported by the evidence. Consider current Vendor Knowledge candidates first for procurement practicality, then verify their technical suitability using stronger technical evidence.
+2. Identify exact candidate manufacturers/models or product families supported by the evidence. Consider current Vendor Knowledge candidates first for procurement practicality, then verify their technical suitability using stronger technical evidence. In Vendor Knowledge candidates only mode, do not expand this set beyond the listed VK candidates.
 3. Compare each credible candidate requirement-by-requirement.
 4. Classify each requirement as Pass, Partial / Engineering review, Fail, or Unknown.
 5. Rank candidates by technical compliance and evidence quality only.
@@ -46,14 +48,14 @@ Workflow:
 Return Markdown with these sections:
 
 ## Recommended equipment
-Give the best technically supported candidate or say that no fully supported match was found. If a technically supported candidate is also in current Vendor Knowledge, call that out explicitly as a procurement advantage without changing the technical ranking.
+Give the best technically supported candidate or say that no fully supported match was found. If a technically supported candidate is also in current Vendor Knowledge, call that out explicitly as a procurement advantage without changing the technical ranking. In Vendor Knowledge candidates only mode, the recommendation must come from Vendor Knowledge or explicitly state that none of the listed candidates are verified as compliant.
 
 ## Technical compliance matrix
 Use a table with: Requirement | Tender requirement | Candidate evidence | Status | Source.
-Compare as many credible candidates as needed for a useful procurement decision. Prefer roughly 3-8 well-supported candidates when genuinely available, but one strongly evidenced exact match is acceptable. Do not pad the result with weak matches.
+Compare as many credible candidates as needed for a useful procurement decision. Prefer roughly 3-8 well-supported candidates when genuinely available, but one strongly evidenced exact match is acceptable. Do not pad the result with weak matches. In Vendor Knowledge candidates only mode, include only Vendor Knowledge candidates.
 
 ## Candidate summary
-For each credible candidate include manufacturer, model/family, technical match classification, key supported ratings, deviations, unknowns and evidence quality. Give fuller detail for the strongest candidates and use a compact additional-candidates table if many credible matches are available.
+For each credible candidate include manufacturer, model/family, technical match classification, key supported ratings, deviations, unknowns and evidence quality. Give fuller detail for the strongest candidates and use a compact additional-candidates table if many credible matches are available. In Vendor Knowledge candidates only mode, exclude every candidate that is not represented by a VK entry.
 
 ## Gaps and engineering review
 List unresolved mandatory requirements, assumptions that must not be treated as facts, and any higher/lower-rating compatibility issues needing engineering judgement.
@@ -62,7 +64,7 @@ List unresolved mandatory requirements, assumptions that must not be treated as 
 Only include price, currency, supplier, availability, warranty or lead-time data if the evidence contains it. State clearly that commercial information did not influence technical compliance. Put current Vendor Knowledge availability here and cite the corresponding [VK#] label.
 
 ## Next actions
-Give concise next steps such as obtain the OEM datasheet, confirm a rating, request an exact type designation, or issue an RFQ/RFI. When a Vendor Knowledge candidate is promising but technically under-evidenced, recommend verifying that exact part number rather than discarding it.
+Give concise next steps such as obtain the OEM datasheet, confirm a rating, request an exact type designation, or issue an RFQ/RFI. When a Vendor Knowledge candidate is promising but technically under-evidenced, recommend verifying that exact part number rather than discarding it. In Vendor Knowledge candidates only mode, do not recommend sourcing a different outside product as the next action unless the user explicitly turns off that mode.
 
 ## Sources
 List the web/OEM evidence sources used. Add a short `Vendor Knowledge` subsection listing any [VK#] entries used as current commercial evidence.
