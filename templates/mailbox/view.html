@@ -5,7 +5,7 @@
   <div>
     <span class="eyebrow">Mailbox Message</span>
     <h1 class="display-title">{{ mailbox_message.subject }}</h1>
-    <p class="hero-copy mb-0">Review the synced email, archive it, create a tender from it, or link it to an existing tender.</p>
+    <p class="hero-copy mb-0">Review the synced email, archive it, create or link a tender, or push reusable vendor stock/price attachments into Vendor Knowledge.</p>
   </div>
   <div class="hero-actions">
     <a class="btn btn-outline-dark btn-lg" href="{{ url_for('mailbox.index', tender_id=tender.id if tender else None, folder=selected_folder) }}">Back to Mailbox</a>
@@ -86,7 +86,13 @@
   </div>
   <div class="col-xl-5">
     <div class="card glass-panel mb-4">
-      <div class="card-header">Attachments</div>
+      <div class="card-header d-flex justify-content-between align-items-center gap-2">
+        <span>Attachments</span>
+        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('vendor_knowledge.index') }}">Vendor Knowledge</a>
+      </div>
+      <div class="card-body border-bottom py-2">
+        <div class="small text-muted">Vendor XLSX/XLSM/CSV files can be pushed into the reusable knowledge library. A new version archives the previous current version; old versions are retained.</div>
+      </div>
       <div class="table-responsive">
         <table class="table align-middle mb-0">
           <thead><tr><th>Filename</th><th>Type</th><th>Actions</th></tr></thead>
@@ -95,7 +101,16 @@
             <tr>
               <td>{{ attachment.original_filename }}</td>
               <td>{{ attachment.file_type }}</td>
-              <td><a class="btn btn-sm btn-outline-secondary" href="{{ url_for('mailbox.download_attachment', message_id=mailbox_message.id, attachment_id=attachment.id) }}">Download</a></td>
+              <td style="min-width: 280px;">
+                <a class="btn btn-sm btn-outline-secondary mb-2" href="{{ url_for('mailbox.download_attachment', message_id=mailbox_message.id, attachment_id=attachment.id) }}">Download</a>
+                <form method="post" action="{{ url_for('vendor_knowledge.import_from_mailbox', message_id=mailbox_message.id, attachment_id=attachment.id) }}">
+                  <input type="hidden" name="replace_current" value="1">
+                  <div class="input-group input-group-sm">
+                    <input class="form-control" name="vendor_name" value="{{ mailbox_message.sender_name or mailbox_message.sender_email or '' }}" placeholder="Vendor name" aria-label="Vendor name">
+                    <button class="btn btn-outline-primary" type="submit">Push to Vendor Knowledge</button>
+                  </div>
+                </form>
+              </td>
             </tr>
             {% else %}
             <tr><td colspan="3" class="text-muted">No attachments were found on this message.</td></tr>

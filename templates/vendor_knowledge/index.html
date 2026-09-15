@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Vendor Knowledge | Tender Designer{% endblock %}
+{% block content %}
+<section class="hero-card mb-4">
+  <div>
+    <span class="eyebrow">Reusable commercial source library</span>
+    <h1 class="display-title">Vendor Knowledge</h1>
+    <p class="hero-copy mb-0">Load vendor stock and price files once, keep every version for audit/history, and let Equipment Research use the current active stock across all tenders.</p>
+  </div>
+  <div class="hero-actions">
+    <a class="btn btn-outline-light btn-lg" href="{{ url_for('vendor_knowledge.index', include_archived=0 if include_archived else 1) }}">
+      {{ 'Current only' if include_archived else 'Show archived versions' }}
+    </a>
+  </div>
+</section>
+
+<div class="row g-4 mb-4">
+  <div class="col-xl-5">
+    <div class="card glass-panel h-100">
+      <div class="card-header">Import Vendor Source</div>
+      <div class="card-body">
+        <p class="text-muted">For normal use, push the attachment directly from Mailbox. Manual upload is also available here.</p>
+        <form method="post" action="{{ url_for('vendor_knowledge.upload') }}" enctype="multipart/form-data" class="row g-3">
+          <div class="col-12">
+            <label class="form-label">Vendor name</label>
+            <input class="form-control" name="vendor_name" placeholder="e.g. Technoworld">
+            <div class="form-text">If left blank, Tender Designer tries to detect it from the source file.</div>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Source file</label>
+            <input class="form-control" type="file" name="file" accept=".xlsx,.xlsm,.csv" required>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Source description</label>
+            <input class="form-control" name="source_name" placeholder="Weekly stock and price list">
+          </div>
+          <div class="col-12 form-check ms-2">
+            <input class="form-check-input" type="checkbox" value="1" name="replace_current" id="replace-current" checked>
+            <label class="form-check-label" for="replace-current">Make this the current source and archive older active versions for the same vendor</label>
+          </div>
+          <div class="col-12">
+            <button class="btn btn-primary" type="submit">Import to Vendor Knowledge</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  <div class="col-xl-7">
+    <div class="card glass-panel h-100">
+      <div class="card-header">Versioning behaviour</div>
+      <div class="card-body">
+        <p><strong>Active</strong> sources are considered by Equipment Research. When a newer source is imported for a vendor, existing active versions are marked <strong>Archived</strong>.</p>
+        <p>Archived versions and their product lines remain in the database and their original source files remain on disk. They can be viewed, downloaded, searched explicitly, or reactivated later.</p>
+        <p class="mb-0">Supported source types: {{ supported_extensions }}. Identical files are de-duplicated rather than stored as another version.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card glass-panel">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span>Vendor Sources</span>
+    <span class="badge text-bg-light">{{ sources|length }} version{{ '' if sources|length == 1 else 's' }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead>
+        <tr><th>Vendor</th><th>Version / Date</th><th>Status</th><th>Items</th><th>Available</th><th>Source</th><th>Imported</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for source in sources %}
+        <tr>
+          <td class="fw-semibold">{{ source.vendor_name }}</td>
+          <td>{{ source.version_label or '-' }}</td>
+          <td><span class="badge {% if source.status == 'active' %}text-bg-success{% else %}text-bg-secondary{% endif %}">{{ source.status|title }}</span></td>
+          <td>{{ source.item_count }}</td>
+          <td>{{ source.available_item_count }}</td>
+          <td class="text-break">{{ source.original_filename }}</td>
+          <td>{{ source.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('vendor_knowledge.view_source', source_id=source.id) }}">Open</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="text-muted">No vendor sources have been loaded yet. Open a mailbox message with a stock/price attachment and push it into Vendor Knowledge.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -30,10 +30,13 @@ Evidence rules:
 8. A failed mandatory requirement means the candidate is not technically compliant even if it is commercially attractive.
 9. Pricing is optional metadata only. If present, put it in a separate Commercial information section and do not include it in the technical match score.
 10. Respect source-quality notes. Weak or family-level sources may corroborate a candidate but must not upgrade an unsupported mandatory requirement to Pass.
+11. The specification may contain `INTERNAL VENDOR KNOWLEDGE` lines labelled [VK1], [VK2], etc inside a `NON-AUTHORITATIVE COMMERCIAL EVIDENCE` section. These lines may be used as evidence for vendor, exact listed description, part number, stated quantity/availability, stated condition and stated price only. They are not technical-compliance evidence for attributes that are not explicitly present in the vendor line.
+12. Vendor Knowledge must never become a tender requirement and must never weaken the original tender specification. Prefer a technically compliant current-stock vendor candidate when technical evidence supports it, but do not promote it merely because it is available or cheap.
+13. Cite commercial claims from Vendor Knowledge with their VK label, for example [VK3]. Use normal numbered evidence citations for web/OEM technical claims.
 
 Workflow:
 1. Identify the equipment category and parse the ORIGINAL specification into mandatory, preferred and ambiguous requirements.
-2. Identify exact candidate manufacturers/models or product families supported by the evidence.
+2. Identify exact candidate manufacturers/models or product families supported by the evidence. Consider current Vendor Knowledge candidates first for procurement practicality, then verify their technical suitability using stronger technical evidence.
 3. Compare each credible candidate requirement-by-requirement.
 4. Classify each requirement as Pass, Partial / Engineering review, Fail, or Unknown.
 5. Rank candidates by technical compliance and evidence quality only.
@@ -43,7 +46,7 @@ Workflow:
 Return Markdown with these sections:
 
 ## Recommended equipment
-Give the best technically supported candidate or say that no fully supported match was found.
+Give the best technically supported candidate or say that no fully supported match was found. If a technically supported candidate is also in current Vendor Knowledge, call that out explicitly as a procurement advantage without changing the technical ranking.
 
 ## Technical compliance matrix
 Use a table with: Requirement | Tender requirement | Candidate evidence | Status | Source.
@@ -56,10 +59,10 @@ For each credible candidate include manufacturer, model/family, technical match 
 List unresolved mandatory requirements, assumptions that must not be treated as facts, and any higher/lower-rating compatibility issues needing engineering judgement.
 
 ## Commercial information
-Only include price, currency, supplier, availability, warranty or lead-time data if the evidence contains it. State clearly that commercial information did not influence technical compliance.
+Only include price, currency, supplier, availability, warranty or lead-time data if the evidence contains it. State clearly that commercial information did not influence technical compliance. Put current Vendor Knowledge availability here and cite the corresponding [VK#] label.
 
 ## Next actions
-Give concise next steps such as obtain the OEM datasheet, confirm a rating, request an exact type designation, or issue an RFQ/RFI.
+Give concise next steps such as obtain the OEM datasheet, confirm a rating, request an exact type designation, or issue an RFQ/RFI. When a Vendor Knowledge candidate is promising but technically under-evidenced, recommend verifying that exact part number rather than discarding it.
 
 ## Sources
-List the evidence sources used.
+List the web/OEM evidence sources used. Add a short `Vendor Knowledge` subsection listing any [VK#] entries used as current commercial evidence.

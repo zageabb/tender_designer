@@ -11,6 +11,7 @@ from flask import Flask
 
 from services.computer_finder_service import ComputerFinderConfigError, find_computer_for_spec
 from services.research_core_adapter import install_research_core_equipment
+from services.vendor_knowledge import build_vendor_search_context
 
 
 _jobs: dict[str, dict] = {}
@@ -122,21 +123,66 @@ def _run_job(
     try:
         with app.app_context():
             install_research_core_equipment()
+            research_spec = computer_spec
+            vendor_match_count = 0
+            if mode != "general":
+                progress(
+                    {
+                        "kind": "vendor_knowledge",
+                        "status": "running",
+                        "label": "Checking current Vendor Knowledge stock",
+                        "phase": "Checking vendor knowledge",
+                    }
+                )
+                vendor_context, vendor_match_count = build_vendor_search_context(computer_spec, limit=14)
+                if vendor_context:
+                    research_spec = (
+                        f"{computer_spec}\n\n"
+                        "--- NON-AUTHORITATIVE COMMERCIAL EVIDENCE ---\n"
+                        f"{vendor_context}\n"
+                        "--- END COMMERCIAL EVIDENCE ---\n\n"
+                        "Research instruction: preserve the original tender requirements above as authoritative. "
+                        "Use Vendor Knowledge only to identify currently available candidate products and commercial facts. "
+                        "Verify technical compliance from appropriate technical evidence."
+                    )
+                    progress(
+                        {
+                            "kind": "vendor_knowledge",
+                            "status": "returned",
+                            "label": f"Found {vendor_match_count} current Vendor Knowledge candidate(s)",
+                            "phase": "Planning research",
+                        }
+                    )
+                else:
+                    progress(
+                        {
+                            "kind": "vendor_knowledge",
+                            "status": "returned",
+                            "label": "No current Vendor Knowledge candidates matched this request",
+                            "phase": "Planning research",
+                        }
+                    )
             result = find_computer_for_spec(
-                computer_spec,
+                research_spec,
                 progress_callback=progress,
                 mode=mode,
                 use_allowed_websites=use_allowed_websites,
                 model=model,
             )
         progress({"kind": "phase", "status": "returned", "label": "Research answer completed", "phase": "Complete"})
+        steps = list(result.get("steps", []))
+        if mode != "general":
+            if vendor_match_count:
+                steps.insert(0, f"Vendor Knowledge supplied {vendor_match_count} current available candidate(s) as commercial evidence.")
+            else:
+                steps.insert(0, "Vendor Knowledge had no current available candidates matching the request.")
         _update(
             job_id,
             status="completed",
             phase="Complete",
             message=result["answer"],
             sources=result.get("sources", []),
-            steps=result.get("steps", []),
+            steps=steps,
             completed_at=_now_iso(),
         )
     except ComputerFinderConfigError as exc:

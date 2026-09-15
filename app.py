@@ -19,6 +19,7 @@ from routes.rfqs import rfqs_bp
 from routes.settings import settings_bp
 from routes.tender_emails import tender_emails_bp
 from routes.tenders import tenders_bp
+from routes.vendor_knowledge import vendor_knowledge_bp
 from services.automation_scheduler import start_automation_scheduler
 from services.auth_service import load_application_user
 from services.extraction_jobs import start_extraction_worker
@@ -32,7 +33,7 @@ from services.tender_monitor import start_tender_monitor_worker
 login_manager = LoginManager()
 csrf = CSRFProtect()
 migrate = Migrate()
-DEFAULT_APP_VERSION = "0.1.5"
+DEFAULT_APP_VERSION = "0.1.6"
 
 
 def create_app(config_overrides: dict | None = None) -> Flask:
@@ -57,6 +58,7 @@ def create_app(config_overrides: dict | None = None) -> Flask:
     migration_mode = os.environ.get("TENDER_DESIGNER_MIGRATION_MODE", "").lower() in {"1", "true", "yes"}
     app.config["DATA_DIR"].mkdir(parents=True, exist_ok=True)
     (app.config["DATA_DIR"] / "tenders").mkdir(parents=True, exist_ok=True)
+    (app.config["DATA_DIR"] / "vendor_knowledge").mkdir(parents=True, exist_ok=True)
     db.init_app(app)
     migrate.init_app(app, db)
     csrf.init_app(app)
@@ -66,6 +68,7 @@ def create_app(config_overrides: dict | None = None) -> Flask:
 
     with app.app_context():
         import models  # noqa: F401
+        import vendor_models  # noqa: F401
 
         if not migration_mode:
             db.create_all()
@@ -81,6 +84,7 @@ def create_app(config_overrides: dict | None = None) -> Flask:
     app.register_blueprint(admin_bp)
     app.register_blueprint(chat_bp)
     app.register_blueprint(computer_finder_bp)
+    app.register_blueprint(vendor_knowledge_bp)
     app.register_blueprint(settings_bp)
     app.register_blueprint(rfqs_bp)
     app.register_blueprint(tender_emails_bp)

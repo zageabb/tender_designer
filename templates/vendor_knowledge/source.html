@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}{{ source.vendor_name }} | Vendor Knowledge{% endblock %}
+{% block content %}
+<section class="hero-card mb-4">
+  <div>
+    <span class="eyebrow">Vendor Knowledge Source</span>
+    <h1 class="display-title">{{ source.vendor_name }}</h1>
+    <p class="hero-copy mb-0">{{ source.source_name or source.original_filename }} · {{ source.version_label or 'Undated version' }} · {{ source.item_count }} item lines</p>
+  </div>
+  <div class="hero-actions">
+    <a class="btn btn-outline-light btn-lg" href="{{ url_for('vendor_knowledge.index', include_archived=1) }}">All Sources</a>
+    <a class="btn btn-outline-light btn-lg" href="{{ url_for('vendor_knowledge.download', source_id=source.id) }}">Download Original</a>
+    {% if source.status == 'active' %}
+    <form method="post" action="{{ url_for('vendor_knowledge.archive', source_id=source.id) }}" onsubmit="return confirm('Archive this source version? It will remain stored and can be reactivated later.');">
+      <button class="btn btn-outline-warning btn-lg" type="submit">Archive Version</button>
+    </form>
+    {% else %}
+    <form method="post" action="{{ url_for('vendor_knowledge.activate', source_id=source.id) }}">
+      <button class="btn btn-primary btn-lg" type="submit">Make Current</button>
+    </form>
+    {% endif %}
+  </div>
+</section>
+
+<div class="row g-4 mb-4">
+  <div class="col-xl-4">
+    <div class="card glass-panel h-100">
+      <div class="card-header">Source Status</div>
+      <div class="card-body">
+        <dl class="row mb-0">
+          <dt class="col-5">Status</dt><dd class="col-7"><span class="badge {% if source.status == 'active' %}text-bg-success{% else %}text-bg-secondary{% endif %}">{{ source.status|title }}</span></dd>
+          <dt class="col-5">Source date</dt><dd class="col-7">{{ source.source_date.isoformat() if source.source_date else '-' }}</dd>
+          <dt class="col-5">Items</dt><dd class="col-7">{{ source.item_count }}</dd>
+          <dt class="col-5">Available</dt><dd class="col-7">{{ source.available_item_count }}</dd>
+          <dt class="col-5">Rows scanned</dt><dd class="col-7">{{ source.row_count }}</dd>
+          <dt class="col-5">Mailbox</dt><dd class="col-7">{% if source.mailbox_message_id %}<a href="{{ url_for('mailbox.view_message', message_id=source.mailbox_message_id) }}">Message {{ source.mailbox_message_id }}</a>{% else %}-{% endif %}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+  <div class="col-xl-8">
+    <div class="card glass-panel h-100">
+      <div class="card-header">Find Within This Version</div>
+      <div class="card-body">
+        <form method="get" class="row g-2">
+          <div class="col-md-9"><input class="form-control" name="q" value="{{ query_text }}" placeholder="Part number, CPU, RAM, model, monitor size…"></div>
+          <div class="col-md-3"><button class="btn btn-outline-primary w-100" type="submit">Filter</button></div>
+        </form>
+        <p class="small text-muted mt-3 mb-0">Equipment Research searches only active vendor versions by default and prefers lines that are currently available. Archived versions remain accessible for history and audit.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card glass-panel">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span>Normalised Items</span>
+    <span class="badge text-bg-light">Showing {{ items|length }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead><tr><th>Type</th><th>Category</th><th>Description</th><th>Part No</th><th>Qty</th><th>Price</th><th>Condition</th><th>Source</th></tr></thead>
+      <tbody>
+        {% for item in items %}
+        <tr class="{% if not item.is_available %}table-light text-muted{% endif %}">
+          <td>{{ item.stock_type.replace('_', ' ')|title }}</td>
+          <td>{{ item.source_category or '-' }}</td>
+          <td style="min-width: 360px;">{{ item.description }}</td>
+          <td class="text-nowrap">{{ item.part_number or '-' }}</td>
+          <td>{{ item.quantity_text or item.availability_status }}</td>
+          <td class="text-nowrap">
+            {% if item.price_qty_1_29 is not none %}{{ item.currency }} {{ '%.2f'|format(item.price_qty_1_29) }}{% elif item.unit_price is not none %}{{ item.currency }} {{ '%.2f'|format(item.unit_price) }}{% else %}-{% endif %}
+            {% if item.price_qty_30_plus is not none and item.price_qty_30_plus != item.price_qty_1_29 %}<div class="small text-muted">30+: {{ item.currency }} {{ '%.2f'|format(item.price_qty_30_plus) }}</div>{% endif %}
+          </td>
+          <td style="min-width: 220px;">{{ item.condition or '-' }}</td>
+          <td class="text-nowrap">{{ item.source_sheet }} #{{ item.source_row }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="text-muted">No item rows matched this filter.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

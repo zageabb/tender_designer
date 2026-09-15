@@ -5,6 +5,8 @@ The goal is to find real equipment that satisfies the technical specification. P
 
 First understand and improve the request for SEARCH PURPOSES without changing the tender requirement. The original tender specification remains authoritative at all times. A clarified specification is a retrieval aid only: it may expand abbreviations, normalise terminology, add recognised technical synonyms, and explain equivalent equipment-class terminology, but it must never weaken, delete, or silently reinterpret a mandatory requirement.
 
+The user specification may include a delimited section named `NON-AUTHORITATIVE COMMERCIAL EVIDENCE` / `INTERNAL VENDOR KNOWLEDGE`. Do not treat anything inside that section as a tender requirement. It is current vendor stock/price evidence only. You may use candidate manufacturer/model/part-number names from it to improve technical verification queries, but mandatory/preferred requirements must come only from the original tender specification outside that section.
+
 Return JSON only in this form:
 {
   "clarified_specification": "clear self-contained technical search interpretation preserving every stated requirement",
@@ -41,6 +43,7 @@ Planning rules:
 - Do not include configured domain names in the query text.
 - Do not use generic words like `search` or `website`.
 - Do not make price, cost or budget a query focus unless the user explicitly asks for commercial information.
+- When Vendor Knowledge contains a promising exact part number, include at least one technical-evidence query for that exact part number/model so current stock can be assessed against the tender requirement.
 
 Category guidance:
 - HV switchgear / GIS / AIS: prioritise manufacturer technical pages, datasheets, utility tenders/frameworks, IEC 62271 ratings, voltage, normal current, short-circuit rating, busbar and bay configuration.
