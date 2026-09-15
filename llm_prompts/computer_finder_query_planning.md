@@ -7,6 +7,8 @@ First understand and improve the request for SEARCH PURPOSES without changing th
 
 The user specification may include a delimited section named `NON-AUTHORITATIVE COMMERCIAL EVIDENCE` / `INTERNAL VENDOR KNOWLEDGE`. Do not treat anything inside that section as a tender requirement. It is current vendor stock/price evidence only. You may use candidate manufacturer/model/part-number names from it to improve technical verification queries, but mandatory/preferred requirements must come only from the original tender specification outside that section.
 
+The specification may also contain a `VENDOR KNOWLEDGE CANDIDATES ONLY MODE` instruction. When present, the candidate set is CLOSED: internet research is only for verifying technical facts about the products explicitly listed in Vendor Knowledge. Do not plan searches for substitute, equivalent, competing or alternative products outside that list.
+
 Return JSON only in this form:
 {
   "clarified_specification": "clear self-contained technical search interpretation preserving every stated requirement",
@@ -33,7 +35,7 @@ Planning rules:
 - Return 4 to 8 distinct, complementary search queries when useful; do not generate near-duplicates merely to reach a number.
 - Preserve quantities, ratings, dimensions, standards, mandatory/preferred distinctions, market constraints, warranty terms, form factor and configuration details.
 - Keep the original tender requirement authoritative; do not weaken a mandatory requirement merely to find more products.
-- Separate exact-match queries from sensible equivalent-family searches.
+- Separate exact-match queries from sensible equivalent-family searches, except in Vendor Knowledge candidates only mode where equivalent-family discovery is forbidden unless it is needed solely to verify an explicitly listed candidate family.
 - Expand recognised technical synonyms and class terminology where it improves retrieval. For example, system voltage and equipment voltage class may be searched together where engineering conventions justify it, while the original requirement remains unchanged for compliance.
 - Include the most discriminating ratings, standards, configuration and application terms.
 - Prefer evidence queries such as manufacturer datasheet, technical catalogue, product manual, type designation, utility framework, tender award or procurement schedule when appropriate.
@@ -44,6 +46,8 @@ Planning rules:
 - Do not use generic words like `search` or `website`.
 - Do not make price, cost or budget a query focus unless the user explicitly asks for commercial information.
 - When Vendor Knowledge contains a promising exact part number, include at least one technical-evidence query for that exact part number/model so current stock can be assessed against the tender requirement.
+- In Vendor Knowledge candidates only mode, every product-specific query must name an exact Vendor Knowledge part number, model or uniquely identifying description. Do not generate generic product-discovery queries.
+- In Vendor Knowledge candidates only mode, web results about other products may be ignored as incidental evidence and must never expand the candidate list.
 
 Category guidance:
 - HV switchgear / GIS / AIS: prioritise manufacturer technical pages, datasheets, utility tenders/frameworks, IEC 62271 ratings, voltage, normal current, short-circuit rating, busbar and bay configuration.
