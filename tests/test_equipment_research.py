@@ -133,7 +133,7 @@ def test_vendor_knowledge_only_mode_skips_web_discovery_when_no_vendor_candidate
         )
         job = computer_finder_jobs._jobs[job_id]
         assert job["status"] == "completed"
-        assert "no currently active and available Vendor Knowledge products matched" in job["message"]
+        assert "no currently active and available vendor knowledge products matched" in job["message"].lower()
         assert "no internet product discovery was performed" in job["message"].lower()
     finally:
         computer_finder_jobs._jobs.pop(job_id, None)
