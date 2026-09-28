@@ -98,10 +98,13 @@ def create_app(config_overrides: dict | None = None) -> Flask:
             return None
         return login_manager.unauthorized()
     if not migration_mode:
-        start_extraction_worker(app)
-        start_mailbox_sync_worker(app)
-        start_tender_monitor_worker(app)
-        start_automation_scheduler(app)
+        process_role = (os.environ.get("TENDER_DESIGNER_PROCESS_ROLE", "web") or "web").strip().lower()
+        if process_role in {"web", "all"}:
+            start_extraction_worker(app)
+            start_tender_monitor_worker(app)
+            start_automation_scheduler(app)
+        if process_role in {"mailbox", "all"}:
+            start_mailbox_sync_worker(app)
     return app
 
 
