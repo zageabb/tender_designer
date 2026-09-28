@@ -118,11 +118,11 @@ DEFAULT_SETTINGS = {
     },
     "mail_auto_sync_enabled": {
         "value": "true",
-        "description": "Automatically queue mailbox background sync jobs on a schedule.",
+        "description": "Allow the standalone mailbox service to sync mail automatically on a schedule.",
     },
     "mail_auto_sync_interval_minutes": {
         "value": "10",
-        "description": "How often the scheduler should queue mailbox background sync jobs.",
+        "description": "How often the standalone mailbox service should queue an automatic sync job.",
     },
     "tender_warning_admin_emails": {
         "value": "abbot.server@gmail.com",

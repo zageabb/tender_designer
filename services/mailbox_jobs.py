@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import queue
+import logging
 import threading
 from datetime import datetime
 
@@ -10,21 +10,26 @@ from database import db
 from models import MailboxSyncJob
 from services.mailbox_service import sync_mailbox, sync_mailbox_folder
 from services.settings_service import get_setting
-from services.worker_lease import acquire_worker_lease
+from services.worker_lease import acquire_worker_lease, worker_lease_is_alive
 
 
-_job_queue: queue.Queue[int] = queue.Queue()
 _worker_lock = threading.Lock()
 _worker_started = False
 _worker_thread: threading.Thread | None = None
+_worker_wake = threading.Event()
 _active_job_id: int | None = None
+POLL_SECONDS = 2
+logger = logging.getLogger(__name__)
 
 
 def enqueue_mailbox_sync_job(job_id: int) -> None:
-    _job_queue.put(job_id)
+    # Jobs are persisted in the database. The event only wakes a worker that
+    # happens to be in this process; a standalone mailbox service discovers
+    # jobs created by the web process through polling.
+    _worker_wake.set()
 
 
-def queue_mailbox_sync_job(mailbox_folder: str | None = None, source_label: str = "Mailbox sync") -> MailboxSyncJob:
+def create_mailbox_sync_job(mailbox_folder: str | None = None, source_label: str = "Mailbox sync") -> MailboxSyncJob:
     label = (mailbox_folder or get_setting("mail_inbox_folder", "INBOX") or "INBOX").strip() or "INBOX"
     job = MailboxSyncJob(
         mailbox_folder=label,
@@ -33,23 +38,35 @@ def queue_mailbox_sync_job(mailbox_folder: str | None = None, source_label: str 
     )
     db.session.add(job)
     db.session.commit()
+    logger.info("mailbox sync queued job_id=%s folder=%s source=%s", job.id, label, source_label)
+    return job
+
+
+def queue_mailbox_sync_job(mailbox_folder: str | None = None, source_label: str = "Mailbox sync") -> MailboxSyncJob:
+    job = create_mailbox_sync_job(mailbox_folder, source_label)
     enqueue_mailbox_sync_job(job.id)
     return job
 
 
 def get_mailbox_worker_status() -> dict[str, object]:
+    leased_alive = worker_lease_is_alive("mailbox-sync-worker")
+    running_job = (
+        MailboxSyncJob.query.filter_by(status="running")
+        .order_by(MailboxSyncJob.started_at.asc(), MailboxSyncJob.created_at.asc())
+        .first()
+    )
     return {
-        "started": _worker_started,
-        "alive": bool(_worker_thread and _worker_thread.is_alive()),
-        "queue_size": _job_queue.qsize(),
-        "active_job_id": _active_job_id,
+        "started": _worker_started or leased_alive,
+        "alive": bool((_worker_thread and _worker_thread.is_alive()) or leased_alive),
+        "queue_size": MailboxSyncJob.query.filter_by(status="queued").count(),
+        "active_job_id": _active_job_id or (running_job.id if running_job else None),
     }
 
 
 def process_mailbox_sync_job(app: Flask, job_id: int) -> None:
     global _active_job_id
     with app.app_context():
-        job = MailboxSyncJob.query.get(job_id)
+        job = db.session.get(MailboxSyncJob, job_id)
         if job is None or job.status not in {"queued", "running"}:
             return
         try:
@@ -58,9 +75,14 @@ def process_mailbox_sync_job(app: Flask, job_id: int) -> None:
             job.error_message = None
             db.session.commit()
             _active_job_id = job.id
+            logger.info("mailbox sync starting job_id=%s folder=%s", job.id, job.mailbox_folder)
 
             folder = (job.mailbox_folder or "").strip()
-            result = sync_mailbox_folder(app.config["DATA_DIR"], folder) if folder and folder.lower() != "default" else sync_mailbox(app.config["DATA_DIR"])
+            result = (
+                sync_mailbox_folder(app.config["DATA_DIR"], folder)
+                if folder and folder.lower() != "default"
+                else sync_mailbox(app.config["DATA_DIR"])
+            )
             processed = result.get("remote_deletions_processed", 0)
             failed = result.get("remote_deletions_failed", 0)
             deletion_summary = ""
@@ -73,9 +95,16 @@ def process_mailbox_sync_job(app: Flask, job_id: int) -> None:
             )
             job.completed_at = datetime.utcnow()
             db.session.commit()
+            logger.info(
+                "mailbox sync completed job_id=%s messages_created=%s messages_updated=%s",
+                job.id,
+                result["created"],
+                result["updated"],
+            )
         except Exception as exc:
             db.session.rollback()
-            job = MailboxSyncJob.query.get(job_id)
+            logger.exception("mailbox sync failed job_id=%s", job_id)
+            job = db.session.get(MailboxSyncJob, job_id)
             if job is not None:
                 job.status = "failed"
                 job.error_message = str(exc)
@@ -85,18 +114,37 @@ def process_mailbox_sync_job(app: Flask, job_id: int) -> None:
             _active_job_id = None
 
 
+def _next_pending_job_id(app: Flask) -> int | None:
+    with app.app_context():
+        job = (
+            MailboxSyncJob.query.filter(MailboxSyncJob.status.in_(["queued", "running"]))
+            .order_by(MailboxSyncJob.created_at.asc())
+            .first()
+        )
+        return job.id if job else None
+
+
 def _worker_loop(app: Flask) -> None:
     while True:
-        job_id = _job_queue.get()
         try:
-            process_mailbox_sync_job(app, job_id)
-        finally:
-            _job_queue.task_done()
+            job_id = _next_pending_job_id(app)
+            if job_id is not None:
+                logger.info("mailbox queued job discovered job_id=%s", job_id)
+                process_mailbox_sync_job(app, job_id)
+                continue
+        except Exception:
+            # A transient database error must not permanently stop mailbox
+            # processing. Remove failed session state before the next poll.
+            logger.exception("mailbox worker poll failed; retrying")
+            with app.app_context():
+                db.session.rollback()
+                db.session.remove()
+        _worker_wake.wait(POLL_SECONDS)
+        _worker_wake.clear()
 
 
 def ensure_mailbox_sync_worker(app: Flask) -> bool:
     global _worker_started, _worker_thread
-    started_now = False
     with _worker_lock:
         if _worker_thread and _worker_thread.is_alive():
             return False
@@ -106,18 +154,8 @@ def ensure_mailbox_sync_worker(app: Flask) -> bool:
         worker.start()
         _worker_thread = worker
         _worker_started = True
-        started_now = True
-
-    if started_now:
-        with app.app_context():
-            queued_jobs = (
-                MailboxSyncJob.query.filter(MailboxSyncJob.status.in_(["queued", "running"]))
-                .order_by(MailboxSyncJob.created_at.asc())
-                .all()
-            )
-        for job in queued_jobs:
-            enqueue_mailbox_sync_job(job.id)
-    return started_now
+        logger.info("mailbox worker started")
+        return True
 
 
 def start_mailbox_sync_worker(app: Flask) -> None:
