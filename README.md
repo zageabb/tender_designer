@@ -53,7 +53,7 @@ Tender Designer is a Flask application for managing tenders, uploaded documents,
 - Local file repository in `data/`
 - Ollama-backed task execution for extraction, orchestration, chat, and computer finder flows
 - Background extraction worker for tender AI jobs
-- Background mailbox sync worker for Gmail sync requests
+- Standalone asynchronous mailbox service for Gmail sync requests
 - Prompt and template library stored as individual markdown files in `llm_prompts/`
 
 ## Setup
@@ -167,12 +167,12 @@ The app is configured to run on port `5050` and is intended to be reachable acro
 
 ## Background Workers
 
-Tender Designer starts background workers when the app boots:
+Tender Designer now separates web-process workers from mailbox synchronization:
 
-- Extraction worker: handles metadata, item, question, and answer-drafting jobs
-- Mailbox sync worker: handles Gmail sync jobs
-- Tender monitor worker: checks active tender deadlines and workflow risks
-- Automation scheduler: triggers scheduled mailbox and tender-monitor work
+- Extraction worker: handles metadata, item, question, and answer-drafting jobs in the web process
+- Tender monitor worker: checks active tender deadlines and workflow risks in the web process
+- Automation scheduler: triggers scheduled tender-monitor work in the web process
+- Mailbox service: runs as a separate process, polls database-backed mailbox jobs, and schedules Gmail sync independently of browser/page activity
 
 Database-backed leases ensure only one process owns each worker role when multiple WSGI processes
 start the application.
@@ -204,6 +204,37 @@ Notes:
 - `.zip` uploads are expanded and each contained file is stored individually
 - `.msg` extraction requires the `extract-msg` package to be installed
 - Existing uploaded files can be replaced by re-uploading with the same effective destination
+
+## Standalone Mailbox Service
+
+Mailbox synchronization is intentionally independent from the Flask request/page lifecycle. The web app only writes mailbox sync requests to the database; the standalone mailbox service discovers and processes them asynchronously.
+
+The service also performs automatic syncs using:
+
+- `mail_auto_sync_enabled`
+- `mail_auto_sync_interval_minutes`
+
+The default interval remains 10 minutes. The service schedules an initial sync when it starts, then repeats at the configured interval. If a manual sync is requested from the mailbox page, that request is persisted and the service normally discovers it within a few seconds.
+
+Start it manually with:
+
+```bash
+cd /home/zageabb/ollama-chat/Tender_Designer
+bash ./start_mailbox_service.sh
+```
+
+For the Ubuntu deployment, install the example user service:
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp systemd/ollama-chat-tender-designer-mailbox.service.example \
+  ~/.config/systemd/user/ollama-chat-tender-designer-mailbox.service
+systemctl --user daemon-reload
+systemctl --user enable --now ollama-chat-tender-designer-mailbox.service
+systemctl --user status ollama-chat-tender-designer-mailbox.service
+```
+
+The mailbox service must receive the same `MAIL_APP_PASSWORD` and relevant production/security environment used by the web service. The example unit includes a commented `EnvironmentFile` line if a shared environment file is preferred.
 
 ## Gmail / Mailbox Setup
 
