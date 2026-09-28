@@ -5,7 +5,6 @@ from datetime import datetime, time, timedelta
 
 from flask import Flask
 
-from services.mailbox_jobs import ensure_mailbox_sync_worker, queue_mailbox_sync_job
 from services.settings_service import get_setting
 from services.tender_monitor import request_tender_monitor_scan
 from services.worker_lease import acquire_worker_lease
@@ -14,18 +13,6 @@ from services.worker_lease import acquire_worker_lease
 _scheduler_lock = threading.Lock()
 _scheduler_thread: threading.Thread | None = None
 _scheduler_started = False
-
-
-def _auto_mail_sync_enabled() -> bool:
-    return (get_setting("mail_auto_sync_enabled", "true") or "true").lower() in {"1", "true", "yes", "on"}
-
-
-def _mail_sync_interval_minutes() -> int:
-    raw_value = get_setting("mail_auto_sync_interval_minutes", "10") or "10"
-    try:
-        return max(1, int(raw_value))
-    except ValueError:
-        return 10
 
 
 def _monitor_schedule_time() -> time:
@@ -47,25 +34,15 @@ def _next_monitor_run(now: datetime) -> datetime:
     return candidate
 
 
-def _next_mail_sync_run(now: datetime) -> datetime:
-    return now + timedelta(minutes=_mail_sync_interval_minutes())
-
-
 def _worker_loop(app: Flask) -> None:
     with app.app_context():
         next_monitor_run = _next_monitor_run(datetime.now())
-        next_mail_sync_run = _next_mail_sync_run(datetime.now())
         while True:
             now = datetime.now()
             if now >= next_monitor_run:
                 request_tender_monitor_scan()
                 next_monitor_run = _next_monitor_run(now + timedelta(seconds=1))
-            if _auto_mail_sync_enabled() and now >= next_mail_sync_run:
-                ensure_mailbox_sync_worker(app)
-                queue_mailbox_sync_job(source_label="Scheduled mailbox sync")
-                next_mail_sync_run = _next_mail_sync_run(now + timedelta(seconds=1))
-            sleep_until = min(next_monitor_run, next_mail_sync_run if _auto_mail_sync_enabled() else next_monitor_run)
-            delay = max(5, min(60, int((sleep_until - now).total_seconds())))
+            delay = max(5, min(60, int((next_monitor_run - now).total_seconds())))
             threading.Event().wait(delay)
 
 
