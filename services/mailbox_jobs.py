@@ -1,15 +1,16 @@
 from __future__ import annotations
 
+import logging
 import threading
 from datetime import datetime
 
 from flask import Flask
 
 from database import db
-from models import MailboxSyncJob, WorkerLease
+from models import MailboxSyncJob
 from services.mailbox_service import sync_mailbox, sync_mailbox_folder
 from services.settings_service import get_setting
-from services.worker_lease import acquire_worker_lease
+from services.worker_lease import acquire_worker_lease, worker_lease_is_alive
 
 
 _worker_lock = threading.Lock()
@@ -18,6 +19,7 @@ _worker_thread: threading.Thread | None = None
 _worker_wake = threading.Event()
 _active_job_id: int | None = None
 POLL_SECONDS = 2
+logger = logging.getLogger(__name__)
 
 
 def enqueue_mailbox_sync_job(job_id: int) -> None:
@@ -36,6 +38,7 @@ def create_mailbox_sync_job(mailbox_folder: str | None = None, source_label: str
     )
     db.session.add(job)
     db.session.commit()
+    logger.info("mailbox sync queued job_id=%s folder=%s source=%s", job.id, label, source_label)
     return job
 
 
@@ -46,9 +49,7 @@ def queue_mailbox_sync_job(mailbox_folder: str | None = None, source_label: str 
 
 
 def get_mailbox_worker_status() -> dict[str, object]:
-    now = datetime.utcnow()
-    lease = db.session.get(WorkerLease, "mailbox-sync-worker")
-    leased_alive = bool(lease and lease.expires_at and lease.expires_at > now)
+    leased_alive = worker_lease_is_alive("mailbox-sync-worker")
     running_job = (
         MailboxSyncJob.query.filter_by(status="running")
         .order_by(MailboxSyncJob.started_at.asc(), MailboxSyncJob.created_at.asc())
@@ -65,7 +66,7 @@ def get_mailbox_worker_status() -> dict[str, object]:
 def process_mailbox_sync_job(app: Flask, job_id: int) -> None:
     global _active_job_id
     with app.app_context():
-        job = MailboxSyncJob.query.get(job_id)
+        job = db.session.get(MailboxSyncJob, job_id)
         if job is None or job.status not in {"queued", "running"}:
             return
         try:
@@ -74,6 +75,7 @@ def process_mailbox_sync_job(app: Flask, job_id: int) -> None:
             job.error_message = None
             db.session.commit()
             _active_job_id = job.id
+            logger.info("mailbox sync starting job_id=%s folder=%s", job.id, job.mailbox_folder)
 
             folder = (job.mailbox_folder or "").strip()
             result = (
@@ -93,9 +95,16 @@ def process_mailbox_sync_job(app: Flask, job_id: int) -> None:
             )
             job.completed_at = datetime.utcnow()
             db.session.commit()
+            logger.info(
+                "mailbox sync completed job_id=%s messages_created=%s messages_updated=%s",
+                job.id,
+                result["created"],
+                result["updated"],
+            )
         except Exception as exc:
             db.session.rollback()
-            job = MailboxSyncJob.query.get(job_id)
+            logger.exception("mailbox sync failed job_id=%s", job_id)
+            job = db.session.get(MailboxSyncJob, job_id)
             if job is not None:
                 job.status = "failed"
                 job.error_message = str(exc)
@@ -117,10 +126,19 @@ def _next_pending_job_id(app: Flask) -> int | None:
 
 def _worker_loop(app: Flask) -> None:
     while True:
-        job_id = _next_pending_job_id(app)
-        if job_id is not None:
-            process_mailbox_sync_job(app, job_id)
-            continue
+        try:
+            job_id = _next_pending_job_id(app)
+            if job_id is not None:
+                logger.info("mailbox queued job discovered job_id=%s", job_id)
+                process_mailbox_sync_job(app, job_id)
+                continue
+        except Exception:
+            # A transient database error must not permanently stop mailbox
+            # processing. Remove failed session state before the next poll.
+            logger.exception("mailbox worker poll failed; retrying")
+            with app.app_context():
+                db.session.rollback()
+                db.session.remove()
         _worker_wake.wait(POLL_SECONDS)
         _worker_wake.clear()
 
@@ -136,6 +154,7 @@ def ensure_mailbox_sync_worker(app: Flask) -> bool:
         worker.start()
         _worker_thread = worker
         _worker_started = True
+        logger.info("mailbox worker started")
         return True
 
 

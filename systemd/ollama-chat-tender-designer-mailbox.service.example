@@ -1,17 +1,17 @@
 [Unit]
 Description=Tender Designer asynchronous mailbox service
-After=network-online.target ollama-chat-tender-designer.service
+After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 WorkingDirectory=/home/zageabb/ollama-chat/Tender_Designer
 Environment=TENDER_DESIGNER_PROCESS_ROLE=mailbox
-# Use the same security/mail environment as the web service.
-# EnvironmentFile=%h/.config/tender-designer.env
+EnvironmentFile=-%h/.config/ollama-chat/tender-designer.env
 ExecStart=/usr/bin/bash /home/zageabb/ollama-chat/Tender_Designer/start_mailbox_service.sh
-Restart=always
+Restart=on-failure
 RestartSec=5
+KillMode=control-group
 
 [Install]
 WantedBy=default.target

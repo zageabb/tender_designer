@@ -37,6 +37,13 @@ def _owner_process_is_alive(owner_id: str) -> bool | None:
     return True
 
 
+def worker_lease_is_alive(name: str) -> bool:
+    lease = db.session.get(WorkerLease, name)
+    if lease is None or lease.expires_at <= datetime.utcnow():
+        return False
+    return _owner_process_is_alive(lease.owner_id) is not False
+
+
 def acquire_worker_lease(app: Flask, name: str) -> bool:
     now = datetime.utcnow()
     expires_at = now + timedelta(seconds=LEASE_SECONDS)

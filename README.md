@@ -234,7 +234,7 @@ systemctl --user enable --now ollama-chat-tender-designer-mailbox.service
 systemctl --user status ollama-chat-tender-designer-mailbox.service
 ```
 
-The mailbox service must receive the same `MAIL_APP_PASSWORD` and relevant production/security environment used by the web service. The example unit includes a commented `EnvironmentFile` line if a shared environment file is preferred.
+The mailbox service receives `MAIL_APP_PASSWORD` and the same production/security environment as the web service from `%h/.config/ollama-chat/tender-designer.env`. Keep that file readable only by the service account and do not store mailbox passwords in Git or the SQLite settings table.
 
 ## Gmail / Mailbox Setup
 
