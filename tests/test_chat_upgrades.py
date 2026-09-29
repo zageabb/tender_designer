@@ -11,7 +11,7 @@ def test_markdown_renderer_supports_tables_and_sanitizes_script():
             "# Result\n\n| Item | Value |\n| --- | --- |\n| A | **Yes** |\n\n<script>alert('x')</script>"
         )
     )
-    assert "<table>" in rendered
+    assert "<table" in rendered
     assert "<strong>Yes</strong>" in rendered
     assert "<script" not in rendered
     assert "alert(" not in rendered
