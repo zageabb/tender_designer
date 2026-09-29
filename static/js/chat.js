@@ -36,17 +36,17 @@ function buildChatContext() {
   return context;
 }
 
-function appendMessage(role, text, steps = []) {
+function appendMessage(role, text, steps = [], messageHtml = null, stepsHtml = null) {
   const node = document.createElement("div");
   node.className = `chat-message ${role}`;
   const body = document.createElement("div");
   body.className = "chat-message-body";
-  body.innerHTML = renderMarkdown(text);
+  body.innerHTML = messageHtml || renderMarkdown(text);
   node.appendChild(body);
   if (steps.length) {
     const detail = document.createElement("div");
     detail.className = "chat-steps";
-    detail.innerHTML = renderMarkdown(steps.map((step) => `- ${step}`).join("\n"));
+    detail.innerHTML = stepsHtml || renderMarkdown(steps.map((step) => `- ${step}`).join("\n"));
     node.appendChild(detail);
   }
   chatHistory.appendChild(node);
@@ -223,7 +223,7 @@ async function loadHistory() {
   const payload = await response.json();
   if (payload.messages?.length) {
     chatHistory.innerHTML = "";
-    payload.messages.forEach((message) => appendMessage(message.role, message.message_text, message.intermediate_steps || []));
+    payload.messages.forEach((message) => appendMessage(message.role, message.message_text, message.intermediate_steps || [], message.message_html || null, message.steps_html || null));
     lastRenderedHistoryCount = payload.messages.length;
   }
   historyLoaded = true;
@@ -268,7 +268,7 @@ if (chatForm) {
       body: JSON.stringify({ message, context: buildChatContext() }),
     });
     const payload = await response.json();
-    appendMessage("assistant", payload.message || "No response.", payload.intermediate_steps || []);
+    appendMessage("assistant", payload.message || "No response.", payload.intermediate_steps || [], payload.message_html || null, payload.steps_html || null);
     if (submitButton) {
       submitButton.disabled = false;
       submitButton.textContent = submitButton.dataset.originalText || "Send";
@@ -383,7 +383,7 @@ if (jobsRoot) {
 
     if (historyPayload.messages?.length && historyPayload.messages.length !== lastRenderedHistoryCount) {
       chatHistory.innerHTML = "";
-      historyPayload.messages.forEach((message) => appendMessage(message.role, message.message_text, message.intermediate_steps || []));
+      historyPayload.messages.forEach((message) => appendMessage(message.role, message.message_text, message.intermediate_steps || [], message.message_html || null, message.steps_html || null));
       lastRenderedHistoryCount = historyPayload.messages.length;
       historyLoaded = true;
     }
