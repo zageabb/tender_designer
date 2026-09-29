@@ -25,6 +25,7 @@ _ALLOWED_ATTRIBUTES = {
     "pre": {"class"},
     "td": {"align"},
     "th": {"align"},
+    "table": {"class"},
 }
 
 def looks_like_markdown(text: str | None) -> bool:
@@ -65,10 +66,26 @@ def render_markdown_html(text: str | None) -> Markup:
     if not source:
         return Markup("")
 
+    # Python-Markdown requires a blank line before a table; legacy Tender
+    # Designer content did not. Normalise that case for backwards compatibility.
+    normalised_lines: list[str] = []
+    previous_was_table = False
+    for line in source.split("\n"):
+        is_table = bool(re.match(r"^\s*\|.+\|\s*$", line))
+        if is_table and normalised_lines and normalised_lines[-1].strip() and not previous_was_table:
+            normalised_lines.append("")
+        normalised_lines.append(line)
+        previous_was_table = is_table
+    source = "\n".join(normalised_lines)
+
     rendered = markdown.markdown(
         source,
         extensions=_MARKDOWN_EXTENSIONS,
         output_format="html",
+    )
+    rendered = rendered.replace(
+        "<table>",
+        '<table class="table table-sm table-bordered markdown-table">',
     )
     cleaned = nh3.clean(
         rendered,
