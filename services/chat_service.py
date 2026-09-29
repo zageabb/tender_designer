@@ -1030,7 +1030,7 @@ def build_chat_response(
     normalized = _normalize(message)
     current_page = (page_context or {}).get("page")
 
-    if tender is not None and _heuristic_product_search_request(normalized):
+    if tender is not None and (intent_hint == "product_search" or _heuristic_product_search_request(normalized)):
         try:
             message_text, steps = _run_product_search(message)
             return {"response_type": "answer", "message": message_text, "intermediate_steps": steps, "actions": []}
@@ -1042,7 +1042,7 @@ def build_chat_response(
                 "actions": [],
             }
 
-    if tender is not None and _heuristic_document_build_request(normalized) and answer_client is not None and answer_model_name:
+    if tender is not None and (intent_hint == "build_document" or _heuristic_document_build_request(normalized)) and answer_client is not None and answer_model_name:
         try:
             return _propose_chat_document(
                 message,
@@ -1827,6 +1827,10 @@ def classify_message_intent(client, model_name: str, message: str, has_upload: b
     if intent == "update_tender_fields" and has_tender_context and confidence in {"high", "medium"}:
         return intent, steps
     if intent == "confirm_action" and confidence in {"high", "medium"}:
+        return intent, steps
+    if intent == "product_search" and has_tender_context and confidence in {"high", "medium"}:
+        return intent, steps
+    if intent == "build_document" and has_tender_context and confidence in {"high", "medium"}:
         return intent, steps
     return None, steps
 
