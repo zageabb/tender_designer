@@ -27,13 +27,6 @@ _ALLOWED_ATTRIBUTES = {
     "th": {"align"},
 }
 
-_ALLOWED_CLASSES = {
-    "code": {"language-python", "language-json", "language-sql", "language-bash", "language-shell",
-             "language-javascript", "language-js", "language-html", "language-css", "language-text"},
-    "pre": {"codehilite"},
-}
-
-
 def looks_like_markdown(text: str | None) -> bool:
     value = (text or "").strip()
     if not value:
@@ -81,7 +74,6 @@ def render_markdown_html(text: str | None) -> Markup:
         rendered,
         tags=_ALLOWED_TAGS,
         attributes=_ALLOWED_ATTRIBUTES,
-        allowed_classes=_ALLOWED_CLASSES,
         url_schemes={"http", "https", "mailto"},
         link_rel="noopener noreferrer",
         clean_content_tags={"script", "style"},
