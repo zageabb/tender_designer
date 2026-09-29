@@ -36,7 +36,39 @@ class OllamaClient:
         response.raise_for_status()
         return response.json().get("response", "").strip()
 
-    def chat_text(\n        self,\n        model: str,\n        messages: list[dict],\n        *,\n        system_prompt: str = "",\n        temperature: float = 0.2,\n        num_ctx: int | None = None,\n    ) -> str:\n        bounded: list[dict] = []\n        if system_prompt.strip():\n            bounded.append({"role": "system", "content": system_prompt.strip()[:40000]})\n        for message in messages[-24:]:\n            role = str(message.get("role") or "user")\n            if role not in {"user", "assistant", "system"}:\n                continue\n            content = str(message.get("content") or message.get("message_text") or "").strip()\n            if content:\n                bounded.append({"role": role, "content": content[:30000]})\n        payload = {\n            "model": model,\n            "messages": bounded,\n            "stream": False,\n            "options": {"temperature": temperature},\n        }\n        if num_ctx:\n            payload["options"]["num_ctx"] = int(num_ctx)\n        response = requests.post(f"{self.base_url}/api/chat", json=payload, timeout=500)\n        response.raise_for_status()\n        message = response.json().get("message") or {}\n        return str(message.get("content") or "").strip()\n\n    def embed_texts(self, model: str, texts: list[str]) -> list[list[float]]:
+    def chat_text(
+        self,
+        model: str,
+        messages: list[dict],
+        *,
+        system_prompt: str = "",
+        temperature: float = 0.2,
+        num_ctx: int | None = None,
+    ) -> str:
+        bounded: list[dict] = []
+        if system_prompt.strip():
+            bounded.append({"role": "system", "content": system_prompt.strip()[:40000]})
+        for message in messages[-24:]:
+            role = str(message.get("role") or "user")
+            if role not in {"user", "assistant", "system"}:
+                continue
+            content = str(message.get("content") or message.get("message_text") or "").strip()
+            if content:
+                bounded.append({"role": role, "content": content[:30000]})
+        payload = {
+            "model": model,
+            "messages": bounded,
+            "stream": False,
+            "options": {"temperature": temperature},
+        }
+        if num_ctx:
+            payload["options"]["num_ctx"] = int(num_ctx)
+        response = requests.post(f"{self.base_url}/api/chat", json=payload, timeout=500)
+        response.raise_for_status()
+        message = response.json().get("message") or {}
+        return str(message.get("content") or "").strip()
+
+    def embed_texts(self, model: str, texts: list[str]) -> list[list[float]]:
         """Return Ollama embeddings for a batch of texts.
 
         The research code treats embeddings as an optional quality improvement, so
