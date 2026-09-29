@@ -10,12 +10,14 @@ from pathlib import Path
 from database import db
 from models import ChatAction, ChatMessage, ChatSession, ChatUpload, MailboxMessage, Tender, TenderDocument, TenderItem, TenderQuestion, TenderSubItem
 from services.file_storage import ensure_tender_directories, save_tender_bytes
+from services.chat_document_service import build_chat_document, safe_document_filename
 from services.mailbox_service import send_composed_message
 from services.markdown_tools import extracted_text_suffix
 from services.managed_paths import resolve_managed_path
 from services.ollama_client import OllamaClient
 from services.prompt_service import render_prompt
 from services.settings_service import get_setting, get_task_model
+from services.tender_knowledge import build_tender_knowledge_context
 
 MAX_CHAT_DOCUMENT_CONTEXT_CHARS = 20000
 
@@ -456,15 +458,13 @@ def _question_list_context(tender: Tender) -> str:
 
 
 def _documents_for_question_answering(tender: Tender, selected_document_ids: list[int] | None = None) -> list[TenderDocument]:
-    if selected_document_ids:
-        selected_ids = {int(document_id) for document_id in selected_document_ids}
-        documents = [document for document in tender.documents if document.id in selected_ids]
-        if documents:
-            return documents
-    if tender.documents:
-        latest = max(tender.documents, key=lambda document: document.uploaded_at or datetime.min)
-        return [latest]
-    return []
+    # Tender chat now treats every processed tender document as knowledge.
+    # selected_document_ids remains accepted for backwards compatibility only.
+    documents = [
+        document for document in tender.documents
+        if document.processed and (document.extracted_text or "").strip()
+    ]
+    return sorted(documents, key=lambda document: document.uploaded_at or datetime.min)
 
 
 def _top_missing_areas(tender: Tender) -> list[str]:
@@ -700,42 +700,17 @@ def _serialize_document_text_context(
     tender: Tender | None,
     selected_document_ids: list[int] | None = None,
     limit: int = MAX_CHAT_DOCUMENT_CONTEXT_CHARS,
+    query: str = "",
 ) -> str:
-    if tender is None:
-        return "No active tender document text is available."
-    if not selected_document_ids:
-        return "No tender documents were selected for chat context."
-    selected_ids = {int(document_id) for document_id in selected_document_ids}
-    sections: list[str] = []
-    total_length = 0
-    processed_count = 0
-    for document in tender.documents:
-        if document.id not in selected_ids:
-            continue
-        text = (document.extracted_text or "").strip()
-        if not text:
-            continue
-        processed_count += 1
-        section = f"Document: {document.original_filename}\n{text}"
-        remaining = limit - total_length
-        if remaining <= 0:
-            break
-        if len(section) > remaining:
-            section = section[:remaining].rstrip() + "\n[Document text truncated]"
-        sections.append(section)
-        total_length += len(section) + 2
-        if total_length >= limit:
-            break
-    if not sections:
-        return "Selected tender documents do not currently have extracted text available."
-    header = (
-        f"Extracted text from {len(sections)} document(s)"
-        + (" (truncated for chat context):" if total_length >= limit else ":")
+    # Manual selection is intentionally ignored: all processed documents form
+    # the active tender's knowledge base, while retrieval keeps the prompt bounded.
+    context, _sources = build_tender_knowledge_context(
+        tender,
+        query,
+        max_chars=max(limit, 28000),
+        max_chunks=10,
     )
-    if processed_count > len(sections):
-        header += f"\nAdditional processed documents were omitted after the {limit}-character context limit."
-    return header + "\n\n" + "\n\n---\n\n".join(sections)
-
+    return context
 
 def _list_tenders() -> list[Tender]:
     return (
@@ -896,27 +871,149 @@ def _computer_finder_context_response(page_context: dict | None) -> tuple[str, l
     ]
 
 
-def _general_llm_chat_response(message: str, page_context: dict | None, tender: Tender | None, client, model_name: str) -> tuple[str, list[str]]:
-    selected_document_ids = page_context.get("selected_document_ids") if page_context else None
+def _general_llm_chat_response(
+    message: str,
+    page_context: dict | None,
+    tender: Tender | None,
+    client,
+    model_name: str,
+    conversation_history: list[dict] | None = None,
+) -> tuple[str, list[str]]:
     tender_context = _serialize_tender_context(tender)
     if tender is None and (page_context or {}).get("page") == "tender_list":
         tender_context = _serialize_tender_list_context()
-    prompt = render_prompt(
-        "chat_general_answer",
+
+    knowledge_context, knowledge_sources = build_tender_knowledge_context(tender, message)
+    system_prompt = render_prompt(
+        "chat_conversation",
         page_context=_serialize_page_context(page_context) + "\n\n" + _serialize_mailbox_context(page_context),
         tender_context=tender_context,
-        document_text_context=_serialize_document_text_context(tender, selected_document_ids=selected_document_ids),
-        user_message=message,
+        document_text_context=knowledge_context,
     )
-    answer = client.generate_text(model_name, prompt)
+    history: list[dict] = []
+    for entry in (conversation_history or [])[-20:]:
+        role = str(entry.get("role") or "")
+        if role not in {"user", "assistant"}:
+            continue
+        content = str(entry.get("message_text") or entry.get("content") or "").strip()
+        if content:
+            history.append({"role": role, "content": content})
+    history.append({"role": "user", "content": message})
+
+    answer = client.chat_text(
+        model_name,
+        history,
+        system_prompt=system_prompt,
+        temperature=0.2,
+    )
     if not answer:
         raise ValueError("The chat model returned an empty response.")
     return answer, [
         f"General chat model: {model_name}",
-        "Used the general chat prompt file with page, tender, and extracted document text context.",
-        "Returned an LLM-generated answer because no higher-priority action was triggered.",
+        f"Used {min(len(history) - 1, 20)} recent conversation message(s) for follow-up context.",
+        f"Automatically retrieved {len(knowledge_sources)} relevant chunk(s) from the active tender knowledge.",
+        "Returned a multi-turn /api/chat answer because no higher-priority confirmed action flow was triggered.",
     ]
 
+
+def _heuristic_product_search_request(normalized: str) -> bool:
+    search_terms = {
+        "product search", "search for a product", "find a product", "find products",
+        "find an equivalent", "find equivalent", "find alternatives", "search the market",
+        "market search", "find equipment", "research this product", "research equipment",
+        "look for suppliers", "find supplier", "find a supplier",
+    }
+    return any(term in normalized for term in search_terms)
+
+
+def _heuristic_document_build_request(normalized: str) -> bool:
+    verbs = ("create", "build", "draft", "write", "generate", "prepare")
+    nouns = ("document", "report", "summary", "brief", "specification", "compliance matrix", "proposal", "response")
+    return any(verb in normalized for verb in verbs) and any(noun in normalized for noun in nouns)
+
+
+def _document_title_from_request(message: str, tender: Tender) -> str:
+    clean = " ".join(message.strip().split())
+    clean = re.sub(r"^(please\s+)?(create|build|draft|write|generate|prepare)\s+", "", clean, flags=re.I)
+    clean = re.sub(r"\s+(as|in)\s+(a\s+)?(docx|word|markdown|md)\b.*$", "", clean, flags=re.I)
+    return (clean[:100] or f"{tender.tender_number} Tender Document").strip(" .:-")
+
+
+def _propose_chat_document(
+    message: str,
+    page_context: dict | None,
+    tender: Tender,
+    client,
+    model_name: str,
+    conversation_history: list[dict] | None,
+) -> dict:
+    knowledge_context, knowledge_sources = build_tender_knowledge_context(tender, message, max_chars=32000, max_chunks=12)
+    system_prompt = render_prompt(
+        "chat_conversation",
+        page_context=_serialize_page_context(page_context),
+        tender_context=_serialize_tender_context(tender),
+        document_text_context=knowledge_context,
+    ) + (
+        "\n\nDOCUMENT DRAFTING MODE:\n"
+        "Produce a complete, standalone document in Markdown for the user's request. "
+        "Use only supported tender facts. Include useful headings and tables/lists where appropriate. "
+        "Do not add commentary before or after the document."
+    )
+    history = []
+    for entry in (conversation_history or [])[-12:]:
+        role = str(entry.get("role") or "")
+        content = str(entry.get("message_text") or "").strip()
+        if role in {"user", "assistant"} and content:
+            history.append({"role": role, "content": content})
+    history.append({"role": "user", "content": message})
+    draft = client.chat_text(model_name, history, system_prompt=system_prompt, temperature=0.1)
+    if not draft:
+        raise ValueError("The chat model returned an empty document draft.")
+    title = _document_title_from_request(message, tender)
+    output_format = "md" if re.search(r"\b(markdown|\.md| md )\b", message, flags=re.I) else "docx"
+    return {
+        "response_type": "proposed_action",
+        "message": (
+            f"I drafted **{title}** from the tender knowledge. "
+            f"Reply **confirm** to save it to this tender as {output_format.upper()}.\n\n"
+            f"{draft}"
+        ),
+        "intermediate_steps": [
+            f"Document drafting model: {model_name}",
+            f"Automatically used {len(knowledge_sources)} relevant tender-knowledge chunk(s).",
+            "Prepared the document as a confirmed action; no file has been saved yet.",
+        ],
+        "actions": [{
+            "action_type": "create_chat_document",
+            "tender_id": tender.id,
+            "title": title,
+            "format": output_format,
+            "markdown_text": draft,
+            "requires_confirmation": True,
+        }],
+    }
+
+
+def _run_product_search(message: str) -> tuple[str, list[str]]:
+    from services.computer_finder_service import find_computer_for_spec
+
+    result = find_computer_for_spec(
+        message,
+        mode="computer",
+        use_allowed_websites=False,
+    )
+    answer = str(result.get("answer") or "").strip()
+    sources = result.get("sources") or []
+    if sources:
+        answer += "\n\n### Research sources\n"
+        for index, source in enumerate(sources[:12], start=1):
+            title = source.get("title") or source.get("url") or f"Source {index}"
+            url = source.get("url") or ""
+            answer += f"\n{index}. [{title}]({url})" if url else f"\n{index}. {title}"
+    return answer or "The product search returned no usable answer.", [
+        "Invoked Tender Designer's existing Equipment Research / product-search stack.",
+        *list(result.get("steps") or [])[:12],
+    ]
 
 def build_chat_response(
     message: str,
@@ -928,9 +1025,40 @@ def build_chat_response(
     answer_model_name: str | None = None,
     latest_upload: ChatUpload | None = None,
     session_uploads: list[ChatUpload] | None = None,
+    conversation_history: list[dict] | None = None,
 ) -> dict:
     normalized = _normalize(message)
     current_page = (page_context or {}).get("page")
+
+    if tender is not None and _heuristic_product_search_request(normalized):
+        try:
+            message_text, steps = _run_product_search(message)
+            return {"response_type": "answer", "message": message_text, "intermediate_steps": steps, "actions": []}
+        except Exception as exc:
+            return {
+                "response_type": "answer",
+                "message": f"I could not complete the product search: {exc}",
+                "intermediate_steps": ["The chat routed this request to the existing Equipment Research capability.", f"Research failed: {exc}"],
+                "actions": [],
+            }
+
+    if tender is not None and _heuristic_document_build_request(normalized) and answer_client is not None and answer_model_name:
+        try:
+            return _propose_chat_document(
+                message,
+                page_context,
+                tender,
+                answer_client,
+                answer_model_name,
+                conversation_history,
+            )
+        except Exception as exc:
+            return {
+                "response_type": "answer",
+                "message": f"I could not draft the document: {exc}",
+                "intermediate_steps": [f"Document drafting failed: {exc}"],
+                "actions": [],
+            }
 
     if tender is None:
         if _heuristic_create_tender_from_text_request(normalized, message):
@@ -1039,7 +1167,14 @@ def build_chat_response(
                 effective_page_context = dict(page_context or {})
                 if selected_document_ids:
                     effective_page_context["selected_document_ids"] = selected_document_ids
-                message_text, steps = _general_llm_chat_response(message, effective_page_context, tender, answer_client, answer_model_name)
+                message_text, steps = _general_llm_chat_response(
+                    message,
+                    effective_page_context,
+                    tender,
+                    answer_client,
+                    answer_model_name,
+                    conversation_history=conversation_history,
+                )
                 return {"response_type": "answer", "message": message_text, "intermediate_steps": steps, "actions": []}
             except Exception as exc:
                 llm_steps = [f"General chat answer fell back to the simple response: {exc}"]
@@ -1276,7 +1411,14 @@ def build_chat_response(
             effective_page_context = dict(page_context or {})
             if selected_document_ids:
                 effective_page_context["selected_document_ids"] = selected_document_ids
-            message_text, steps = _general_llm_chat_response(message, effective_page_context, tender, answer_client, answer_model_name)
+            message_text, steps = _general_llm_chat_response(
+                    message,
+                    effective_page_context,
+                    tender,
+                    answer_client,
+                    answer_model_name,
+                    conversation_history=conversation_history,
+                )
             return {"response_type": "answer", "message": message_text, "intermediate_steps": steps, "actions": []}
         except Exception as exc:
             fallback_steps = [f"General chat answer fell back to the built-in summary: {exc}"]
@@ -1559,6 +1701,49 @@ def apply_confirmed_action(action: ChatAction, data_dir: Path) -> str:
         if updated == 0:
             return f"I checked {len(documents)} document(s), but I could not confidently fill any tender question answers for {tender.tender_number}."
         return f"Updated {updated} tender question answer field(s) for {tender.tender_number} using {len(documents)} supporting document(s)."
+    if action.action_type == "create_chat_document":
+        tender = Tender.query.get(payload.get("tender_id"))
+        if tender is None:
+            raise ValueError("The target tender could not be found.")
+        title = str(payload.get("title") or f"{tender.tender_number} Tender Document").strip()[:150]
+        markdown_text = str(payload.get("markdown_text") or "").strip()
+        if not markdown_text:
+            raise ValueError("The generated document draft was empty.")
+        output_format = "md" if payload.get("format") == "md" else "docx"
+        if output_format == "md":
+            filename = safe_document_filename(title, ".md")
+            content = markdown_text.encode("utf-8")
+            file_type = "md"
+        else:
+            filename = safe_document_filename(title, ".docx")
+            content = build_chat_document(title, markdown_text)
+            file_type = "docx"
+        original_name, stored_name, saved_path = save_tender_bytes(
+            data_dir,
+            tender.id,
+            filename,
+            content,
+        )
+        document = TenderDocument(
+            tender=tender,
+            original_filename=original_name,
+            stored_filename=stored_name,
+            file_path=str(saved_path),
+            file_type=file_type,
+            extracted_text=markdown_text,
+            processed=True,
+            processing_notes="Generated from tender chat using automatic tender knowledge.",
+        )
+        db.session.add(document)
+        db.session.flush()
+        action.status = "applied"
+        action.result_json = json.dumps({
+            "tender_id": tender.id,
+            "document_id": document.id,
+            "redirect_path": f"/tenders/{tender.id}?refreshed={int(datetime.utcnow().timestamp())}#documents",
+        })
+        return f"Created {original_name} and added it to tender {tender.tender_number}."
+
     if action.action_type == "send_mailbox_message":
         tender = Tender.query.get(payload.get("tender_id")) if payload.get("tender_id") else None
         mailbox_message = send_composed_message(
