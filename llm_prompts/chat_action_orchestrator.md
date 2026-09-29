@@ -1,14 +1,35 @@
-# Chat Action Orchestrator Prompt
+# Chat Intent Orchestrator
 
-Classify the user's message into one of these intents and return JSON only with keys `intent`, `confidence`, and `reason`.
-Allowed intents: create_tender_from_upload, create_tender_from_text, add_items_from_message, answer_questions_from_documents, update_tender_fields, confirm_action, none.
-Use `create_tender_from_upload` only if the user appears to want a new tender created from an uploaded document.
-Use `create_tender_from_text` only if the user appears to want a new tender created from pasted text in the chat itself.
-Use `add_items_from_message` only if the user is asking to turn a typed list of items into tender items on the current tender.
-Use `answer_questions_from_documents` only if the user is asking to fill tender question answers from uploaded or selected supporting document text.
-Use `update_tender_fields` only if the user is asking to change one or more fields on the current tender.
-Use `confirm_action` only if the user is clearly confirming a previously proposed action.
+Classify the user's Tender Designer chat request. Return JSON only.
 
-User message: {{user_message}}
-Has upload available: {{has_upload}}
-Has tender context: {{has_tender_context}}
+Allowed intents:
+- create_tender_from_upload
+- create_tender_from_text
+- add_items_from_message
+- answer_questions_from_documents
+- update_tender_fields
+- product_search
+- build_document
+- confirm_action
+- general_answer
+
+Use product_search when the user asks to find, research, compare, source or identify external products, equipment, equivalents, alternatives, suppliers, market pricing or current specifications.
+
+Use build_document when the user asks to draft, prepare, create, build, write or generate a tender-related document, report, brief, proposal, specification, response or compliance matrix.
+
+Use answer_questions_from_documents for requests to populate stored tender-question answers from tender knowledge.
+
+Use update_tender_fields only for direct changes to Tender record fields.
+
+Return:
+{
+  "intent": "<allowed intent>",
+  "confidence": "high|medium|low",
+  "reason": "short explanation"
+}
+
+User message:
+{{user_message}}
+
+Has recent upload: {{has_upload}}
+Has active tender: {{has_tender_context}}

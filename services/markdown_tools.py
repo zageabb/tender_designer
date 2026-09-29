@@ -2,8 +2,31 @@ from __future__ import annotations
 
 import re
 
-from markupsafe import Markup, escape
+import markdown
+import nh3
+from markupsafe import Markup
 
+
+_MARKDOWN_EXTENSIONS = [
+    "extra",
+    "sane_lists",
+    "nl2br",
+]
+
+_ALLOWED_TAGS = {
+    "a", "blockquote", "br", "code", "del", "div", "em", "h1", "h2", "h3",
+    "h4", "h5", "h6", "hr", "li", "ol", "p", "pre", "strong", "table",
+    "tbody", "td", "th", "thead", "tr", "ul",
+}
+
+_ALLOWED_ATTRIBUTES = {
+    "a": {"href", "title"},
+    "code": {"class"},
+    "pre": {"class"},
+    "td": {"align"},
+    "th": {"align"},
+    "table": {"class"},
+}
 
 def looks_like_markdown(text: str | None) -> bool:
     value = (text or "").strip()
@@ -14,15 +37,16 @@ def looks_like_markdown(text: str | None) -> bool:
         stripped = line.strip()
         if not stripped:
             continue
-        if stripped.startswith(("```", "#", "> ", "- ", "* ", "| ")):
+        if stripped.startswith(("~~~", "```", "#", "> ", "- ", "* ", "+ ", "| ")):
             return True
-        if re.match(r"^\d+\.\s+", stripped):
+        if re.match(r"^\d+[.)]\s+", stripped):
             return True
         if re.match(r"^\|.+\|$", stripped):
             return True
     return bool(
-        re.search(r"\[[^\]]+\]\((https?://[^\s)]+)\)", value)
+        re.search(r"\[[^\]]+\]\([^\s)]+\)", value)
         or re.search(r"\*\*[^*]+\*\*", value)
+        or re.search(r"~~[^~]+~~", value)
         or re.search(r"`[^`]+`", value)
     )
 
@@ -31,147 +55,44 @@ def extracted_text_suffix(text: str | None) -> str:
     return ".md" if looks_like_markdown(text) else ".txt"
 
 
-def _escape_with_safe_breaks(value: str) -> str:
-    parts = re.split(r"(<br\s*/?>)", value, flags=re.IGNORECASE)
-    return "".join(
-        "<br>" if re.fullmatch(r"<br\s*/?>", part, flags=re.IGNORECASE) else str(escape(part))
-        for part in parts
-        if part
-    )
-
-
-def _format_inline_markdown(value: str) -> str:
-    html = _escape_with_safe_breaks(value)
-    html = re.sub(r"`([^`]+)`", r"<code>\1</code>", html)
-    html = re.sub(
-        r"\[([^\]]+)\]\((https?://[^\s)]+)\)",
-        r'<a href="\2" target="_blank" rel="noopener noreferrer">\1</a>',
-        html,
-    )
-    html = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", html)
-    html = re.sub(r"\*([^*]+)\*", r"<em>\1</em>", html)
-    return html
-
-
 def render_markdown_html(text: str | None) -> Markup:
+    """Render modern Markdown and return sanitised HTML safe for Jinja templates.
+
+    Python-Markdown handles nested lists, fenced code, tables, footnotes and the
+    rest of the Extra syntax. nh3 then strips unsafe HTML/URLs while preserving
+    the generated formatting used by Tender Designer.
+    """
     source = (text or "").replace("\r\n", "\n").strip()
     if not source:
         return Markup("")
 
-    lines = source.split("\n")
-    html: list[str] = []
-    paragraph: list[str] = []
-    list_type: str | None = None
-    list_items: list[str] = []
-    in_code_block = False
-    code_lines: list[str] = []
-    table_lines: list[str] = []
+    # Python-Markdown requires a blank line before a table; legacy Tender
+    # Designer content did not. Normalise that case for backwards compatibility.
+    normalised_lines: list[str] = []
+    previous_was_table = False
+    for line in source.split("\n"):
+        is_table = bool(re.match(r"^\s*\|.+\|\s*$", line))
+        if is_table and normalised_lines and normalised_lines[-1].strip() and not previous_was_table:
+            normalised_lines.append("")
+        normalised_lines.append(line)
+        previous_was_table = is_table
+    source = "\n".join(normalised_lines)
 
-    def flush_paragraph() -> None:
-        nonlocal paragraph
-        if not paragraph:
-            return
-        html.append(f"<p>{'<br>'.join(_format_inline_markdown(line) for line in paragraph)}</p>")
-        paragraph = []
-
-    def flush_list() -> None:
-        nonlocal list_type, list_items
-        if not list_type or not list_items:
-            return
-        html.append(f"<{list_type}>{''.join(f'<li>{_format_inline_markdown(item)}</li>' for item in list_items)}</{list_type}>")
-        list_type = None
-        list_items = []
-
-    def flush_code_block() -> None:
-        nonlocal in_code_block, code_lines
-        if not in_code_block:
-            return
-        code_block = "\n".join(code_lines)
-        html.append(f"<pre><code>{escape(code_block)}</code></pre>")
-        in_code_block = False
-        code_lines = []
-
-    def flush_table() -> None:
-        nonlocal table_lines
-        if len(table_lines) < 2:
-            if table_lines:
-                paragraph.extend(table_lines)
-            table_lines = []
-            return
-        rows: list[list[str]] = []
-        for line in table_lines:
-            stripped = line.strip().strip("|")
-            cells = [cell.strip() for cell in stripped.split("|")]
-            rows.append(cells)
-        header = rows[0]
-        body_rows = rows[2:] if len(rows) > 2 else []
-        header_html = "".join("<th>" + _format_inline_markdown(cell) + "</th>" for cell in header)
-        body_html = "".join(
-            "<tr>" + "".join("<td>" + _format_inline_markdown(cell) + "</td>" for cell in row) + "</tr>"
-            for row in body_rows
-        )
-        html.append(
-            "<table class=\"table table-sm table-bordered markdown-table\">"
-            f"<thead><tr>{header_html}</tr></thead>"
-            f"<tbody>{body_html}</tbody>"
-            "</table>"
-        )
-        table_lines = []
-
-    for line in lines:
-        stripped = line.strip()
-        if stripped.startswith("```"):
-            flush_paragraph()
-            flush_list()
-            flush_table()
-            if in_code_block:
-                flush_code_block()
-            else:
-                in_code_block = True
-            continue
-        if in_code_block:
-            code_lines.append(line)
-            continue
-        if re.match(r"^\|.+\|$", stripped):
-            flush_paragraph()
-            flush_list()
-            table_lines.append(line)
-            continue
-        if table_lines:
-            flush_table()
-        if not stripped:
-            flush_paragraph()
-            flush_list()
-            continue
-        heading_match = re.match(r"^(#{1,6})\s+(.*)$", stripped)
-        if heading_match:
-            flush_paragraph()
-            flush_list()
-            level = len(heading_match.group(1))
-            html.append(f"<h{level}>{_format_inline_markdown(heading_match.group(2))}</h{level}>")
-            continue
-        unordered_match = re.match(r"^[-*]\s+(.*)$", stripped)
-        if unordered_match:
-            flush_paragraph()
-            if list_type and list_type != "ul":
-                flush_list()
-            list_type = "ul"
-            list_items.append(unordered_match.group(1))
-            continue
-        ordered_match = re.match(r"^\d+\.\s+(.*)$", stripped)
-        if ordered_match:
-            flush_paragraph()
-            if list_type and list_type != "ol":
-                flush_list()
-            list_type = "ol"
-            list_items.append(ordered_match.group(1))
-            continue
-        flush_list()
-        paragraph.append(line)
-
-    flush_paragraph()
-    flush_list()
-    if table_lines:
-        flush_table()
-    flush_code_block()
-    return Markup("".join(html))
+    rendered = markdown.markdown(
+        source,
+        extensions=_MARKDOWN_EXTENSIONS,
+        output_format="html",
+    )
+    rendered = rendered.replace(
+        "<table>",
+        '<table class="table table-sm table-bordered markdown-table">',
+    )
+    cleaned = nh3.clean(
+        rendered,
+        tags=_ALLOWED_TAGS,
+        attributes=_ALLOWED_ATTRIBUTES,
+        url_schemes={"http", "https", "mailto"},
+        link_rel="noopener noreferrer",
+        clean_content_tags={"script", "style"},
+    )
+    return Markup(cleaned)
