@@ -21,6 +21,7 @@ from services.chat_service import (
 from services.document_extraction import extract_text
 from services.file_storage import save_chat_bytes, save_chat_upload, save_tender_bytes, save_tender_upload
 from services.managed_paths import unlink_managed_file
+from services.markdown_tools import render_markdown_html
 from services.ollama_client import OllamaClient
 from services.settings_service import get_setting, get_task_model
 from services.upload_ingestion import expand_upload_entries
@@ -36,7 +37,11 @@ def history():
     tender_id = page_context.get("tender_id")
     session = get_or_create_session(db, tender_id, page_context)
     db.session.commit()
-    return jsonify({"messages": get_recent_messages(session)})
+    messages = get_recent_messages(session)
+    for item in messages:
+        item["message_html"] = str(render_markdown_html(item.get("message_text")))
+        item["steps_html"] = str(render_markdown_html("\n".join(f"- {step}" for step in item.get("intermediate_steps") or [])))
+    return jsonify({"messages": messages})
 
 
 @chat_bp.route("/clear", methods=["POST"])
@@ -161,6 +166,10 @@ def message():
             response_payload["intermediate_steps"] = classifier_steps + response_payload.get("intermediate_steps", [])
     log_chat_exchange(db, session, user_message, response_payload)
     db.session.commit()
+    response_payload["message_html"] = str(render_markdown_html(response_payload.get("message")))
+    response_payload["steps_html"] = str(
+        render_markdown_html("\n".join(f"- {step}" for step in response_payload.get("intermediate_steps") or []))
+    )
     return jsonify(response_payload)
 
 
@@ -224,7 +233,7 @@ def upload():
             if document.extracted_text:
                 message = (
                     f"I received {document.original_filename}. It looks ready for review. "
-                    "You can now ask me to extract pricing, fill question answers from this file, add it to RAG, or treat it as a tender addendum."
+                    "It is now automatically available to this tender's AI knowledge. You can ask questions, search across it, draft documents, or use it for tender answers."
                 )
             else:
                 message = f"I received {document.original_filename}, but I could not extract text yet: {document.processing_notes}"
@@ -232,7 +241,7 @@ def upload():
             message = (
                 f"I received {len(created_documents)} files for this tender"
                 f" and extracted text from {processed_count} of them. "
-                "You can now run extraction tasks against the selected documents."
+                "The processed files are now automatically available to this tender's AI knowledge."
             )
         return jsonify({"ok": True, "message": message, "document_id": created_documents[-1].id})
 
