@@ -155,6 +155,7 @@ def message():
             answer_model_name=answer_model_name,
             latest_upload=latest_upload,
             session_uploads=session_uploads,
+            conversation_history=get_recent_messages(session),
         )
         if classifier_steps:
             response_payload["intermediate_steps"] = classifier_steps + response_payload.get("intermediate_steps", [])
