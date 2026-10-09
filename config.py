@@ -29,6 +29,7 @@ class Config:
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"
     SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "").lower() in {"1", "true", "yes"}
+    SESSION_COOKIE_NAME = "tender_designer_session"
     OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://192.168.1.249:11434")
     LLM_MODELS = {
         "orchestrator": os.environ.get("LLM_ORCHESTRATOR_MODEL", "llama3.2"),

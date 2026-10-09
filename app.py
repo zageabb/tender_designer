@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import os
 
-from flask import Flask
+from flask import Flask, request
+from flask.sessions import SecureCookieSessionInterface
 from flask_login import LoginManager
 from flask_migrate import Migrate
 from flask_wtf.csrf import CSRFProtect
@@ -37,10 +38,22 @@ migrate = Migrate()
 DEFAULT_APP_VERSION = "0.1.6"
 
 
+class PrefixAwareSessionInterface(SecureCookieSessionInterface):
+    """Scope the app cookie to its public UDA prefix while preserving LAN mode."""
+
+    def get_cookie_path(self, app: Flask) -> str:
+        prefix = request.script_root.rstrip("/")
+        return f"{prefix}/" if prefix else super().get_cookie_path(app)
+
+    def get_cookie_secure(self, app: Flask) -> bool:
+        return request.is_secure or super().get_cookie_secure(app)
+
+
 def create_app(config_overrides: dict | None = None) -> Flask:
     app = Flask(__name__)
     # Trust only one isolated UDA/Caddy forwarded prefix hop.
     app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1, x_prefix=1)
+    app.session_interface = PrefixAwareSessionInterface()
     app.config.from_object(Config)
     if config_overrides:
         app.config.update(config_overrides)
