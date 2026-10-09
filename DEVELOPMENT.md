@@ -33,12 +33,12 @@ For coding work, an empty result, no write/edit action, unchanged branch HEAD, e
 ## Development ledger
 
 ### OPS-UDA-001 — Trusted UDA path-prefixed deployment
-Status: 🔨 IN PROGRESS
+Status: ⏳ AWAITING ACCEPTANCE
 
 Scope: live registered Tender Designer application only.
-Implementation: one-hop ProxyFix, prefix-safe Flask URLs and shared template `<base>`; existing CSRF-aware fetch wrapper now scopes root-relative same-origin API calls to the application's prefix. LAN root access remains unchanged.
+Implementation: one-hop ProxyFix, prefix-safe Flask URLs and shared template `<base>`; existing CSRF-aware fetch wrapper now scopes root-relative same-origin API calls to the application's prefix. The application uses a unique session-cookie name and dynamically scopes the cookie to `/` on LAN or `/apps/tender-designer/` through UDA. LAN root access remains unchanged.
 Security: keep UDA/Caddy the only trusted forwarding ingress, preserve CSRF/auth and do not enable public proxy before acceptance.
-Evidence: `tests/test_uda_subpath.py`, existing GitHub Actions full pytest workflow.
+Evidence: `tests/test_uda_subpath.py`; focused proxy test 1 passed; complete suite 61 passed; existing GitHub Actions full pytest workflow.
 
 - [ ] CI green and PR merged to `main`
 - [ ] Verify UDA auth, tender creation/upload, chat, document downloads and background jobs in browser
