@@ -6,6 +6,7 @@ from flask import Flask
 from flask_login import LoginManager
 from flask_migrate import Migrate
 from flask_wtf.csrf import CSRFProtect
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from config import Config
 from database import db
@@ -38,6 +39,8 @@ DEFAULT_APP_VERSION = "0.1.6"
 
 def create_app(config_overrides: dict | None = None) -> Flask:
     app = Flask(__name__)
+    # Trust only one isolated UDA/Caddy forwarded prefix hop.
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1, x_prefix=1)
     app.config.from_object(Config)
     if config_overrides:
         app.config.update(config_overrides)
