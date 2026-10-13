@@ -100,7 +100,7 @@
           // Flask's url_for already includes X-Forwarded-Prefix behind UDA.
           // Only root-relative legacy URLs lacking that prefix should be scoped.
           const localPath = typeof input === "string" && input.startsWith("/") && !input.startsWith("//");
-          const appPrefix = new URL(document.baseURI).pathname.replace(/\\/$/, "");
+          const appPrefix = new URL(document.baseURI).pathname.replace(/\/$/, "");
           const alreadyScoped = localPath && appPrefix &&
             (input === appPrefix || input.startsWith(appPrefix + "/"));
           const scoped = localPath && !alreadyScoped
