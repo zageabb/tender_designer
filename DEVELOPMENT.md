@@ -1,6 +1,6 @@
 # Development Status
 
-Last reviewed: 2026-10-02
+Last reviewed: 2026-10-13
 Current development state: ACTIVE
 
 ## Purpose
@@ -33,17 +33,17 @@ For coding work, an empty result, no write/edit action, unchanged branch HEAD, e
 ## Development ledger
 
 ### OPS-UDA-002 — Prevent duplicated prefix on research API requests
-Status: ⏳ AWAITING ACCEPTANCE
+Status: ✅ COMPLETE
 
-Equipment Research worked over the LAN but search returned an HTML 404 behind the UDA reverse proxy. Flask's `url_for` already includes the forwarded `/apps/tender-designer` prefix, while the common JavaScript fetch wrapper was also prepending the prefix to every root-relative URL.
+Issue: Equipment Research succeeded on the LAN but returned a Flask HTML 404 through UDA/Caddy. Flask-generated `url_for` routes already contained `/apps/tender-designer`, and the global fetch wrapper duplicated that prefix.
 
-Implementation: the fetch wrapper now checks whether a root-relative URL already starts with the active application prefix, and only prefixes legacy unscoped URLs. LAN root behaviour is retained. Changed `templates/base.html` on `main` (commit `9b0f99ba`).
+Implementation: `templates/base.html` now detects already-prefixed root-relative URLs and preserves them, while continuing to scope legacy root-relative URLs. This retains LAN behaviour. Fix merged directly to `main` in commit `9b0f99ba`, documented in `ca6c0bdc`.
 
-Validation: source-level inspection confirms already-prefixed search and status URLs are preserved. Live reverse-proxy search and GitHub CI still need verification; UDA deployment has not been independently confirmed.
+Evidence: existing `tests/test_uda_subpath.py` covers UDA prefix URL rendering; source inspection verified the corrected client URL handling. On 2026-10-13, user reported the reverse-proxy Equipment Research search was running after deployment and explicitly accepted closure. GitHub combined commit status query returned no CI statuses; a fresh CI pass and final result completion were not independently verified, so these are not claimed.
 
-- [ ] Verify CI and live UDA deployment
-- [ ] Run Equipment Research through reverse proxy and confirm search and polling succeed
-
+- [x] Fix duplicate prefix handling on `main`
+- [x] User verified research search starts through the reverse proxy
+- [x] User accepted issue closure (2026-10-13)
 
 ### OPS-UDA-001 — Trusted UDA path-prefixed deployment
 Status: ⏳ AWAITING ACCEPTANCE
