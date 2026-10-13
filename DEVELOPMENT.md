@@ -32,6 +32,19 @@ For coding work, an empty result, no write/edit action, unchanged branch HEAD, e
 
 ## Development ledger
 
+### OPS-UDA-002 — Prevent duplicated prefix on research API requests
+Status: ⏳ AWAITING ACCEPTANCE
+
+Equipment Research worked over the LAN but search returned an HTML 404 behind the UDA reverse proxy. Flask's `url_for` already includes the forwarded `/apps/tender-designer` prefix, while the common JavaScript fetch wrapper was also prepending the prefix to every root-relative URL.
+
+Implementation: the fetch wrapper now checks whether a root-relative URL already starts with the active application prefix, and only prefixes legacy unscoped URLs. LAN root behaviour is retained. Changed `templates/base.html` on `main` (commit `9b0f99ba`).
+
+Validation: source-level inspection confirms already-prefixed search and status URLs are preserved. Live reverse-proxy search and GitHub CI still need verification; UDA deployment has not been independently confirmed.
+
+- [ ] Verify CI and live UDA deployment
+- [ ] Run Equipment Research through reverse proxy and confirm search and polling succeed
+
+
 ### OPS-UDA-001 — Trusted UDA path-prefixed deployment
 Status: ⏳ AWAITING ACCEPTANCE
 
