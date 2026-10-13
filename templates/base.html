@@ -97,8 +97,15 @@
             headers.set("X-CSRFToken", token);
             init = { ...init, headers };
           }
+          // Flask's url_for already includes X-Forwarded-Prefix behind UDA.
+          // Only root-relative legacy URLs lacking that prefix should be scoped.
           const localPath = typeof input === "string" && input.startsWith("/") && !input.startsWith("//");
-          const scoped = localPath ? new URL(input.slice(1), document.baseURI).toString() : input;
+          const appPrefix = new URL(document.baseURI).pathname.replace(/\\/$/, "");
+          const alreadyScoped = localPath && appPrefix &&
+            (input === appPrefix || input.startsWith(appPrefix + "/"));
+          const scoped = localPath && !alreadyScoped
+            ? new URL(input.slice(1), document.baseURI).toString()
+            : input;
           return originalFetch(scoped, init);
         };
       })();
