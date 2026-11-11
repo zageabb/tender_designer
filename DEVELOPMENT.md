@@ -32,6 +32,32 @@ For coding work, an empty result, no write/edit action, unchanged branch HEAD, e
 
 ## Development ledger
 
+### DEV-001 — Make AI metadata extraction resilient to duplicate tender numbers
+Status: ⏳ AWAITING ACCEPTANCE
+Priority: High
+Owner/Agent: Codex
+Branch: main
+Depends on: None
+Can run in parallel with: Unrelated tender workflows
+Integration status: ready for deployment
+
+Requirement: AI metadata extraction must not fail when a document contains a tender number already assigned to another tender, and background-worker error handling must recover a failed SQLAlchemy transaction before recording the job failure.
+
+Implementation: Metadata extraction preserves the current tender number when the extracted number is already in use and reports the conflict in the completed job summary. The extraction worker explicitly rolls back before querying and updating a failed job.
+
+Evidence:
+- Files: `services/llm_tasks.py`, `services/extraction_jobs.py`, `tests/test_extraction_jobs.py`
+- Tests: `pytest -q tests/test_extraction_jobs.py` (2 passed); `pytest -q` (63 passed).
+- CI: pending.
+- User/business acceptance: pending.
+
+Completion criteria:
+- [x] Duplicate extracted tender numbers no longer poison the worker transaction.
+- [x] Worker failure recording rolls back before querying the job.
+- [x] Relevant tests pass.
+- [ ] Change is deployed and verified against tender 62.
+- [ ] User acceptance is recorded separately.
+
 ### OPS-UDA-002 — Prevent duplicated prefix on research API requests
 Status: ✅ COMPLETE
 

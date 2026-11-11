@@ -87,6 +87,20 @@ def _parse_submission_type(value: str | None) -> str | None:
     return aliases.get(normalized)
 
 
+def _available_tender_number(tender: Tender, value: object) -> tuple[str | None, str | None]:
+    candidate = str(value or "").strip()
+    if not candidate or candidate == tender.tender_number:
+        return None, None
+    with db.session.no_autoflush:
+        duplicate = Tender.query.filter(
+            Tender.tender_number == candidate,
+            Tender.id != tender.id,
+        ).first()
+    if duplicate is not None:
+        return None, candidate
+    return candidate, None
+
+
 def extract_tender_metadata(
     client: OllamaClient,
     tender: Tender,
@@ -109,8 +123,12 @@ def extract_tender_metadata(
         error = None
         success = True
     if success:
+        tender_number, duplicate_tender_number = _available_tender_number(
+            tender,
+            parsed.get("tender_number"),
+        )
         tender.customer_name = parsed.get("customer_name") or tender.customer_name
-        tender.tender_number = parsed.get("tender_number") or tender.tender_number
+        tender.tender_number = tender_number or tender.tender_number
         tender.title = parsed.get("title") or tender.title
         if parsed.get("status"):
             advance_tender_status(tender, parsed["status"])
@@ -120,6 +138,11 @@ def extract_tender_metadata(
         tender.award_date = _parse_date_value(parsed.get("award_date")) or tender.award_date
         tender.currency = parsed.get("currency") or tender.currency
         tender.notes = "\n".join(filter(None, [tender.notes, parsed.get("notes")])).strip() or None
+    if success and duplicate_tender_number:
+        return True, (
+            "Metadata extracted, but tender number "
+            f"{duplicate_tender_number} is already in use and was not changed."
+        )
     return success, "Metadata extracted." if success else error or raw_response
 
 

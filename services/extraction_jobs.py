@@ -331,6 +331,19 @@ def process_extraction_job(app: Flask, job_id: int) -> None:
             _active_job_id = None
 
 
+def _mark_failed_extraction_job(job_id: int, exc: Exception) -> None:
+    # A worker exception may be the result of an autoflush failure. Clear that
+    # failed transaction before trying to query or update the job record.
+    db.session.rollback()
+    job = db.session.get(ExtractionJob, job_id)
+    if job and job.status in {"queued", "running", "cancelling"}:
+        job.status = "failed"
+        job.summary_message = None
+        job.error_message = f"Background worker error: {exc}"
+        job.completed_at = datetime.utcnow()
+        db.session.commit()
+
+
 def _worker_loop(app: Flask) -> None:
     while True:
         job_id = _job_queue.get()
@@ -340,13 +353,7 @@ def _worker_loop(app: Flask) -> None:
         except Exception as exc:
             app.logger.exception("Extraction worker failed while processing job %s", job_id)
             with app.app_context():
-                job = ExtractionJob.query.get(job_id)
-                if job and job.status in {"queued", "running", "cancelling"}:
-                    job.status = "failed"
-                    job.summary_message = None
-                    job.error_message = f"Background worker error: {exc}"
-                    job.completed_at = datetime.utcnow()
-                    db.session.commit()
+                _mark_failed_extraction_job(job_id, exc)
         finally:
             with _worker_lock:
                 _queued_job_ids.discard(job_id)
