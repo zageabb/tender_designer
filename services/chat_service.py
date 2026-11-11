@@ -327,6 +327,23 @@ def _parse_send_mail_request(raw_message: str, tender: Tender | None) -> dict | 
     }
 
 
+def _is_informational_question(normalized: str) -> bool:
+    """Keep fact-finding questions out of record-changing tender workflows."""
+    import re
+
+    if not re.match(
+        r"^(what|which|when|where|who|why|how|is|are|does|do|tell me|explain|describe|can you tell me|could you tell me)\\b",
+        normalized,
+    ):
+        return False
+    # An explicit mutation request takes precedence over question-style phrasing.
+    return not re.search(
+        r"\\b(fill in|fill|populate|update|change|set|save|submit|write to|add to|record|apply)\\b"
+        r".{0,70}\\b(answer|answers|question|questions|field|fields|record|records)\\b",
+        normalized,
+    )
+
+
 def _heuristic_answer_questions_request(normalized: str) -> bool:
     action_match = any(
         phrase in normalized
@@ -1250,7 +1267,7 @@ def build_chat_response(
         message_text, steps = _best_price_response(tender)
         return {"response_type": "answer", "message": message_text, "intermediate_steps": steps, "actions": []}
 
-    if intent_hint == "answer_questions_from_documents" or _heuristic_answer_questions_request(normalized):
+    if (intent_hint == "answer_questions_from_documents" or _heuristic_answer_questions_request(normalized)) and not _is_informational_question(normalized):
         if not tender.questions:
             return {
                 "response_type": "answer",
@@ -1795,6 +1812,10 @@ def classify_message_intent(client, model_name: str, message: str, has_upload: b
         return "update_tender_fields", [
             "Matched the message against the local Tender field-update rules.",
             "A tender context is active and the request names a field and a change operation.",
+        ]
+    if has_tender_context and _is_informational_question(normalized):
+        return "general_answer", [
+            "Read-only information question; routed to tender knowledge chat without proposing record changes.",
         ]
     prompt = render_prompt(
         "chat_action_orchestrator",
