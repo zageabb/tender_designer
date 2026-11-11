@@ -332,14 +332,14 @@ def _is_informational_question(normalized: str) -> bool:
     import re
 
     if not re.match(
-        r"^(what|which|when|where|who|why|how|is|are|does|do|tell me|explain|describe|can you tell me|could you tell me)\\b",
+        r"^(what|which|when|where|who|why|how|is|are|does|do|tell me|explain|describe|can you tell me|could you tell me)\b",
         normalized,
     ):
         return False
     # An explicit mutation request takes precedence over question-style phrasing.
     return not re.search(
-        r"\\b(fill in|fill|populate|update|change|set|save|submit|write to|add to|record|apply)\\b"
-        r".{0,70}\\b(answer|answers|question|questions|field|fields|record|records)\\b",
+        r"\b(fill in|fill|populate|update|change|set|save|submit|write to|add to|record|apply)\b"
+        r".{0,70}\b(answer|answers|question|questions|field|fields|record|records)\b",
         normalized,
     )
 
