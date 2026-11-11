@@ -39,7 +39,7 @@ Owner/Agent: Codex
 Branch: main
 Depends on: None
 Can run in parallel with: Unrelated tender workflows
-Integration status: ready for deployment
+Integration status: deployed to the Ubuntu service
 
 Requirement: AI metadata extraction must not fail when a document contains a tender number already assigned to another tender, and background-worker error handling must recover a failed SQLAlchemy transaction before recording the job failure.
 
@@ -49,13 +49,15 @@ Evidence:
 - Files: `services/llm_tasks.py`, `services/extraction_jobs.py`, `tests/test_extraction_jobs.py`
 - Tests: `pytest -q tests/test_extraction_jobs.py` (2 passed); `pytest -q` (63 passed).
 - CI: pending.
+- Deployment: commit `865bb46` deployed to `/home/zageabb/ollama-chat/Tender_Designer`; focused production-environment tests passed (2 tests).
+- Production verification: the durable source tender is tender 61 with tender number `182`; its metadata, items, and questions are complete. The failed tender 62 was a transient duplicate of the same mailbox message and was not restored after service restart.
 - User/business acceptance: pending.
 
 Completion criteria:
 - [x] Duplicate extracted tender numbers no longer poison the worker transaction.
 - [x] Worker failure recording rolls back before querying the job.
 - [x] Relevant tests pass.
-- [ ] Change is deployed and verified against tender 62.
+- [x] Change is deployed and the production duplicate-number condition is verified.
 - [ ] User acceptance is recorded separately.
 
 ### OPS-UDA-002 — Prevent duplicated prefix on research API requests
