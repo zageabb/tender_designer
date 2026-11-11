@@ -49,7 +49,7 @@ Evidence:
 - Files: `services/llm_tasks.py`, `services/extraction_jobs.py`, `services/mailbox_service.py`, `routes/mailbox.py`, `tests/test_extraction_jobs.py`
 - Tests: `pytest -q tests/test_extraction_jobs.py` (3 passed); `pytest -q` (64 passed).
 - CI: pending.
-- Deployment: commit `865bb46` deployed to `/home/zageabb/ollama-chat/Tender_Designer`; focused production-environment tests passed (2 tests).
+- Deployment: commits `865bb46` and `5b0f559` deployed to `/home/zageabb/ollama-chat/Tender_Designer`; focused production-environment tests passed (3 tests).
 - Production verification: the durable source tender is tender 61 with tender number `182`; its metadata, items, and questions are complete. The failed tender 62 was a transient duplicate of the same mailbox message and was not restored after service restart.
 - User/business acceptance: pending.
 
