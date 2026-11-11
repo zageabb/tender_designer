@@ -13,6 +13,7 @@ from services.mailbox_service import (
     create_tender_from_mailbox_message,
     copy_linked_mailbox_message_to_tenders,
     delete_mailbox_message,
+    existing_tender_for_mailbox_message,
     import_mailbox_message_to_tender,
     list_mailbox_folders,
     mailbox_is_configured,
@@ -250,9 +251,13 @@ def create_tender_from_message(message_id: int):
     tender_id = request.form.get("tender_id", type=int)
     selected_folder = (request.form.get("folder") or mailbox_message.mailbox_folder or "").strip()
     try:
+        existing_tender = existing_tender_for_mailbox_message(mailbox_message)
         tender = create_tender_from_mailbox_message(current_app.config["DATA_DIR"], mailbox_message)
         _commit_with_retry()
-        flash(f"Created tender {tender.tender_number} from mailbox email.", "success")
+        if existing_tender is not None:
+            flash(f"That email is already linked to tender {tender.tender_number}; opened the existing tender.", "info")
+        else:
+            flash(f"Created tender {tender.tender_number} from mailbox email.", "success")
         return redirect(url_for("tenders.detail_tender", tender_id=tender.id))
     except Exception as exc:
         db.session.rollback()
@@ -360,13 +365,26 @@ def bulk_action():
 
         if action_name == "create_tender":
             created_tenders = []
+            existing_count = 0
             for mailbox_message in messages:
+                if existing_tender_for_mailbox_message(mailbox_message) is not None:
+                    existing_count += 1
                 created_tenders.append(create_tender_from_mailbox_message(current_app.config["DATA_DIR"], mailbox_message))
                 _commit_with_retry()
             if len(created_tenders) == 1:
-                flash(f"Created tender {created_tenders[0].tender_number} from the selected email.", "success")
+                if existing_count:
+                    flash(
+                        f"That email is already linked to tender {created_tenders[0].tender_number}; opened the existing tender.",
+                        "info",
+                    )
+                else:
+                    flash(f"Created tender {created_tenders[0].tender_number} from the selected email.", "success")
                 return redirect(url_for("tenders.detail_tender", tender_id=created_tenders[0].id))
-            flash(f"Created {len(created_tenders)} tenders from the selected emails.", "success")
+            new_count = len(created_tenders) - existing_count
+            flash(
+                f"Created {new_count} tender(s); reused {existing_count} existing linked tender(s).",
+                "success",
+            )
             return redirect(url_for("mailbox.index", **route_kwargs))
 
         if action_name == "import_to_tender":

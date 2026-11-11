@@ -15,9 +15,10 @@ os.environ["SECRET_KEY"] = "test-secret"
 
 from app import create_app  # noqa: E402
 from database import db  # noqa: E402
-from models import ExtractionJob, Tender, TenderDocument  # noqa: E402
+from models import ExtractionJob, MailboxMessage, MailboxTenderLink, Tender, TenderDocument  # noqa: E402
 from services.extraction_jobs import _mark_failed_extraction_job  # noqa: E402
 from services.llm_tasks import extract_tender_metadata  # noqa: E402
+from services.mailbox_service import create_tender_from_mailbox_message  # noqa: E402
 
 
 class FakeMetadataClient:
@@ -107,6 +108,27 @@ class ExtractionJobTestCase(unittest.TestCase):
             self.assertEqual(recorded.status, "failed")
             self.assertIn("UNIQUE constraint failed", recorded.error_message)
             self.assertIsNotNone(recorded.completed_at)
+
+    def test_creating_tender_again_for_linked_mail_returns_existing_tender(self) -> None:
+        with self.app.app_context():
+            message = MailboxMessage(
+                provider_message_id="mail-99",
+                mailbox_folder="INBOX",
+                subject="Fwd: ELLg re tender docs",
+                sender_email="sender@example.com",
+            )
+            existing = Tender(customer_name="East Lancashire Learning Group", tender_number="182")
+            db.session.add_all([message, existing])
+            db.session.flush()
+            db.session.add(MailboxTenderLink(mailbox_message=message, tender=existing, notes="Imported from mailbox."))
+            db.session.commit()
+
+            returned = create_tender_from_mailbox_message(Path(self.temp_dir.name) / "data", message)
+            db.session.commit()
+
+            self.assertEqual(returned.id, existing.id)
+            self.assertEqual(Tender.query.count(), 1)
+            self.assertEqual(MailboxTenderLink.query.count(), 1)
 
 
 if __name__ == "__main__":

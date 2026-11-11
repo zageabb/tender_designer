@@ -830,7 +830,20 @@ def copy_linked_mailbox_message_to_tenders(data_dir: Path, mailbox_message: Mail
     return copied_to
 
 
+def existing_tender_for_mailbox_message(mailbox_message: MailboxMessage) -> Tender | None:
+    existing_link = (
+        MailboxTenderLink.query
+        .filter_by(mailbox_message_id=mailbox_message.id)
+        .order_by(MailboxTenderLink.created_at.asc(), MailboxTenderLink.id.asc())
+        .first()
+    )
+    return existing_link.tender if existing_link is not None else None
+
+
 def create_tender_from_mailbox_message(data_dir: Path, mailbox_message: MailboxMessage) -> Tender:
+    existing_tender = existing_tender_for_mailbox_message(mailbox_message)
+    if existing_tender is not None:
+        return existing_tender
     timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
     sender_label = mailbox_message.sender_name or mailbox_message.sender_email or "Mailbox Sender"
     tender = Tender(

@@ -41,13 +41,13 @@ Depends on: None
 Can run in parallel with: Unrelated tender workflows
 Integration status: deployed to the Ubuntu service
 
-Requirement: AI metadata extraction must not fail when a document contains a tender number already assigned to another tender, and background-worker error handling must recover a failed SQLAlchemy transaction before recording the job failure.
+Requirement: AI metadata extraction must not fail when a document contains a tender number already assigned to another tender, background-worker error handling must recover a failed SQLAlchemy transaction before recording the job failure, and repeated mailbox intake must not create another tender for an already-linked email.
 
-Implementation: Metadata extraction preserves the current tender number when the extracted number is already in use and reports the conflict in the completed job summary. The extraction worker explicitly rolls back before querying and updating a failed job.
+Implementation: Metadata extraction preserves the current tender number when the extracted number is already in use and reports the conflict in the completed job summary. The extraction worker explicitly rolls back before querying and updating a failed job. Mailbox tender creation now reopens the first linked tender instead of creating a duplicate.
 
 Evidence:
-- Files: `services/llm_tasks.py`, `services/extraction_jobs.py`, `tests/test_extraction_jobs.py`
-- Tests: `pytest -q tests/test_extraction_jobs.py` (2 passed); `pytest -q` (63 passed).
+- Files: `services/llm_tasks.py`, `services/extraction_jobs.py`, `services/mailbox_service.py`, `routes/mailbox.py`, `tests/test_extraction_jobs.py`
+- Tests: `pytest -q tests/test_extraction_jobs.py` (3 passed); `pytest -q` (64 passed).
 - CI: pending.
 - Deployment: commit `865bb46` deployed to `/home/zageabb/ollama-chat/Tender_Designer`; focused production-environment tests passed (2 tests).
 - Production verification: the durable source tender is tender 61 with tender number `182`; its metadata, items, and questions are complete. The failed tender 62 was a transient duplicate of the same mailbox message and was not restored after service restart.
@@ -56,6 +56,7 @@ Evidence:
 Completion criteria:
 - [x] Duplicate extracted tender numbers no longer poison the worker transaction.
 - [x] Worker failure recording rolls back before querying the job.
+- [x] Repeated mailbox intake reuses the existing linked tender.
 - [x] Relevant tests pass.
 - [x] Change is deployed and the production duplicate-number condition is verified.
 - [ ] User acceptance is recorded separately.
