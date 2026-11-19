@@ -1,0 +1,94 @@
+# DEV-020: review-only V2 candidate. NOT an installation or migration approval.
+# Verify exact live systemd units, SQLite paths, backup and secret *names*
+# on m901-lenovo before any execution or production publication.
+schema_version: 2
+application:
+  name: tender-designer
+  kind: web
+  display_name: Tender Designer
+  group: TAIJU - Development
+source:
+  repository: zageabb/tender_designer
+  branch: main
+builds:
+  - name: python-dependencies
+    toolchain: python
+    working_dir: .
+    commands:
+      - ["python3", "-m", "pip", "install", "-r", "requirements.txt"]
+services:
+  - name: web
+    role: web
+    runtime: binary
+    working_dir: .
+    entrypoint: ["bash", "start_tender_designer.sh"]
+    port: 5050
+    health:
+      type: http
+      path: /auth/login
+    restart: on-failure
+    required_builds: [python-dependencies]
+    environment_refs:
+      - SECRET_KEY
+      - ADMIN_USERNAME
+      - ADMIN_PASSWORD_HASH
+      - TENDER_DESIGNER_PRODUCTION
+  - name: mailbox
+    role: worker
+    runtime: python
+    working_dir: .
+    entrypoint: ["python3", "mailbox_daemon.py"]
+    depends_on: [web]
+    health:
+      type: process
+    restart: on-failure
+    required_builds: [python-dependencies]
+    environment_refs:
+      - SECRET_KEY
+      - ADMIN_USERNAME
+      - ADMIN_PASSWORD_HASH
+      - MAIL_APP_PASSWORD
+      - TENDER_DESIGNER_PRODUCTION
+health:
+  aggregate: all-required
+  required_services: [web, mailbox]
+  on_optional_failure: degraded
+  startup_timeout_seconds: 120
+proxy:
+  enabled: true
+  upstream: web
+  canonical_path: /apps/tender-designer/
+  preserve_prefix: true
+  authentication: uda
+environment:
+  required:
+    - SECRET_KEY
+    - ADMIN_USERNAME
+    - ADMIN_PASSWORD_HASH
+    - MAIL_APP_PASSWORD
+    - TENDER_DESIGNER_PRODUCTION
+  definitions:
+    - name: SECRET_KEY
+      source: secret
+      phase: runtime
+    - name: ADMIN_USERNAME
+      source: config
+      phase: runtime
+    - name: ADMIN_PASSWORD_HASH
+      source: secret
+      phase: runtime
+    - name: MAIL_APP_PASSWORD
+      source: secret
+      phase: runtime
+    - name: TENDER_DESIGNER_PRODUCTION
+      source: config
+      phase: runtime
+deployment:
+  strategy: systemd
+  auto_update: false
+  rollback: false
+  github_reporting: false
+  approval: explicit
+  restart_order: [web, mailbox]
+lifecycle:
+  owner: tender-designer
