@@ -15,7 +15,8 @@ builds:
     toolchain: python
     working_dir: .
     commands:
-      - ["python3", "-m", "pip", "install", "-r", "requirements.txt"]
+      - ["python3", "-m", "venv", ".venv"]
+      - [".venv/bin/python", "-m", "pip", "install", "-r", "requirements.txt"]
 services:
   - name: web
     role: web
@@ -35,9 +36,9 @@ services:
       - TENDER_DESIGNER_PRODUCTION
   - name: mailbox
     role: worker
-    runtime: python
+    runtime: binary
     working_dir: .
-    entrypoint: ["python3", "mailbox_daemon.py"]
+    entrypoint: ["bash", "start_mailbox_service.sh"]
     depends_on: [web]
     health:
       type: process
