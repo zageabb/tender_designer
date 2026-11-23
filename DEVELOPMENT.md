@@ -39,18 +39,18 @@ Owner/Agent: Codex
 Branch: main
 Depends on: None
 Can run in parallel with: Unrelated tender workflows
-Integration status: tested and ready for deployment
+Integration status: deployed to the Ubuntu service
 
 Requirement: A stalled Gmail IMAP operation must not leave a mailbox sync job permanently running, and a transient database/storage failure must not permanently stop worker-lease heartbeats.
 
 Implementation: IMAP connections use a configurable per-operation timeout with a safe 30-second default and 300-second cap. Worker-lease heartbeat threads now roll back failed sessions, retry after transient failures, and release their in-process registration if ownership ends.
 
 Evidence:
-- Commit: pending.
+- Commit: `874d67b`.
 - Files: `services/mailbox_service.py`, `services/settings_service.py`, `services/worker_lease.py`, `tests/test_async_mailbox_service.py`, `README.md`
 - Tests: `pytest -q tests/test_async_mailbox_service.py` (10 passed); `pytest -q` (67 passed).
 - CI: pending.
-- Deployment: pending.
+- Deployment: commit `874d67b` deployed to `/home/zageabb/ollama-chat/Tender_Designer`; the web and mailbox services restarted cleanly. The stale job and both queued follow-up jobs completed, the queue drained, three missing messages were imported, and both mailbox worker leases resumed current heartbeats.
 - User/business acceptance: pending.
 
 Completion criteria:
@@ -58,8 +58,8 @@ Completion criteria:
 - [x] Invalid timeout settings fall back safely and excessive values are capped.
 - [x] Worker-lease heartbeats survive transient database failures.
 - [x] Focused and complete automated test suites pass.
-- [ ] Change is committed and pushed to `main`.
-- [ ] Change is deployed and the production mailbox queue drains.
+- [x] Change is committed and pushed to `main`.
+- [x] Change is deployed and the production mailbox queue drains.
 - [ ] User acceptance is recorded separately.
 
 ### DEV-001 — Make AI metadata extraction resilient to duplicate tender numbers
