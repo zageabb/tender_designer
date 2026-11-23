@@ -43,3 +43,33 @@ def test_commas_and_mixed_case_are_supported():
     spec, schedule = parse_delivery_schedule(description)
     assert spec == "Laptop"
     assert [(i["month"], i["quantity"]) for i in schedule] == [("January", 1000), ("February", 250)]
+
+
+def test_multiline_document_description_and_schedule():
+    extracted = (
+        "Tender item 1\nDescription:\n"
+        "Laptop Computer • 13th gen CPU • 16GB Ram DDR5 • 3 Year Warranty\n"
+        "Tentative Delivery schedule:\n"
+        "January 2027: 100 sets\n"
+        "February 2027: 100 sets\n"
+        "March 2027: 100 sets\n"
+        "April 2027: 100 sets\n"
+        "May 2027: 200 sets\n"
+        "June 2027: 200 sets\n"
+        "July 2027: 200 sets\n"
+        "Other terms: provide a 3-year warranty\n"
+    )
+    items = build_delivery_items(extracted, "Document #9: laptops.pdf")
+    assert len(items) == 7
+    assert sum(int(item["quantity_required"]) for item in items) == 1000
+    assert items[0]["description"] == "Laptop Computer - January 2027"
+    assert "3 Year Warranty" in items[-1]["specification_summary"]
+
+
+def test_rejects_incomplete_month_on_following_line():
+    extracted = (
+        "Description: Laptop Computer\n"
+        "Delivery schedule:\nJanuary 2027: 100 sets\n"
+        "February 2027: TBD sets\n"
+    )
+    assert build_delivery_items(extracted, "document") == []
