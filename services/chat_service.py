@@ -394,11 +394,13 @@ def _propose_delivery_schedule_items(
     selected_document_ids: list[int] | None,
 ) -> dict:
     context = page_context or {}
-    sources = []
+    sources: list[tuple[str, str]] = []
+    explicitly_selected = False
     item_id = context.get("selected_item_id") or context.get("tender_item_id")
     if not item_id and str(context.get("table") or "").lower() in {"tenderitem", "tender_item", "tender_items"}:
         item_id = context.get("selected_record_id")
     if item_id:
+        explicitly_selected = True
         try:
             item_id = int(item_id)
         except (TypeError, ValueError):
@@ -410,40 +412,67 @@ def _propose_delivery_schedule_items(
     else:
         document_ids = selected_document_ids if selected_document_ids is not None else context.get("selected_document_ids")
         if document_ids:
+            explicitly_selected = True
             try:
                 identifiers = {int(value) for value in document_ids}
             except (TypeError, ValueError):
                 identifiers = set()
             documents = [doc for doc in tender.documents if doc.id in identifiers]
         else:
-            # Do not arbitrarily choose a file from a tender with multiple documents.
-            documents = list(tender.documents) if len(tender.documents) == 1 else []
+            # No explicit selection: inspect available sources and only proceed
+            # if one unambiguous delivery schedule is found.
+            documents = list(tender.documents)
         for document in documents:
-            for line in (document.extracted_text or "").splitlines():
-                if "delivery schedule" in line.lower():
-                    sources.append((f"Document #{document.id}: {document.original_filename}", line.strip()))
-        if not sources and not document_ids:
-            # Item-list view may provide no explicit selection: permit one unambiguous match.
+            if document.extracted_text:
+                sources.append((f"Document #{document.id}: {document.original_filename}", document.extracted_text))
+        if not explicitly_selected:
             for item in tender.items:
                 text = " ".join(filter(None, (item.description, item.specification_summary)))
-                if "delivery schedule" in text.lower():
-                    sources.append((f"Tender item #{item.id}", text))
+                sources.append((f"Tender item #{item.id}", text))
+            # Permit a pasted description when no source is selected.
+            if "delivery schedule" in message.lower():
+                sources.append(("Chat message", message))
+
     proposals = []
+    ambiguous_documents = []
     for label, text in sources:
+        # A selected file can contain several specifications. Never silently
+        # pick the first schedule if multiple appear in one document.
+        if len(re.findall(r"\\b(?:tentative\\s+)?delivery\\s+schedule\\s*:", text, flags=re.I)) > 1:
+            ambiguous_documents.append(label)
+            continue
         parsed = build_delivery_items(text, label)
         if parsed:
             proposals.append((label, parsed))
-    if len(proposals) != 1:
-        explanation = (
-            "Multiple delivery schedules matched. Select one document or item and retry."
-            if len(proposals) > 1 else
-            "I could not find one complete delivery schedule in the selected item or document. "
-            "Select the source or paste its full description into chat."
-        )
-        return {"response_type": "answer", "message": explanation,
-                "intermediate_steps": ["Checked selected tender sources for a complete monthly delivery schedule."], "actions": []}
+    if len(proposals) != 1 or ambiguous_documents:
+        if ambiguous_documents or len(proposals) > 1:
+            explanation = (
+                "I found multiple delivery schedules or sources. Select one tender item "
+                "with its full description, or isolate the relevant schedule in a document."
+            )
+        elif explicitly_selected:
+            explanation = (
+                "The selected source was received, but I could not extract a complete "
+                "month/quantity delivery schedule. Check that the document text contains "
+                "the Description and Delivery schedule fields."
+            )
+        else:
+            explanation = (
+                "I could not locate one unambiguous delivery schedule. Select the "
+                "document checkbox or tender item, or paste the full description into chat."
+            )
+        return {
+            "response_type": "answer",
+            "message": explanation,
+            "intermediate_steps": [
+                f"Selected source: {'yes' if explicitly_selected else 'no'}.",
+                f"Sources inspected: {len(sources)}; complete schedules: {len(proposals)}.",
+                "Read full extracted source text, including multiline descriptions and schedules.",
+            ],
+            "actions": [],
+        }
     label, items = proposals[0]
-    preview = "\n".join(
+    preview = "\\n".join(
         f"- {item['delivery_month']}: {item['quantity_required']} {item['delivery_unit']}"
         for item in items
     )
@@ -451,9 +480,9 @@ def _propose_delivery_schedule_items(
     return {
         "response_type": "proposed_action",
         "message": (
-            f"Found {len(items)} monthly deliveries in {label}:\n{preview}\n"
+            f"Found {len(items)} monthly deliveries in {label}:\\n{preview}\\n"
             f"**Total: {total:,}**. Each new item will retain the product specification. "
-            "The original item or document will remain unchanged.\n\n"
+            "The original item or document will remain unchanged.\\n\\n"
             "Reply with 'confirm' to create the new tender items."
         ),
         "intermediate_steps": [
