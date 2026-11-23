@@ -9,6 +9,7 @@ from pathlib import Path
 
 from database import db
 from models import ChatAction, ChatMessage, ChatSession, ChatUpload, MailboxMessage, Tender, TenderDocument, TenderItem, TenderQuestion, TenderSubItem
+from services.delivery_schedule import build_delivery_items
 from services.file_storage import ensure_tender_directories, save_tender_bytes
 from services.chat_document_service import build_chat_document, safe_document_filename
 from services.mailbox_service import send_composed_message
@@ -376,6 +377,97 @@ def _question_answer_mode(normalized: str) -> str:
     ):
         return "final_only"
     return "draft"
+
+
+def _delivery_schedule_request(normalized: str) -> bool:
+    return (
+        any(word in normalized for word in ("schedule", "delivery", "month"))
+        and any(word in normalized for word in ("extract", "split", "create", "make", "add", "new item", "separate"))
+        and any(word in normalized for word in ("item", "month", "quantity", "schedule"))
+    )
+
+
+def _propose_delivery_schedule_items(
+    message: str,
+    page_context: dict | None,
+    tender: Tender,
+    selected_document_ids: list[int] | None,
+) -> dict:
+    context = page_context or {}
+    sources = []
+    item_id = context.get("selected_item_id") or context.get("tender_item_id")
+    if not item_id and str(context.get("table") or "").lower() in {"tenderitem", "tender_item", "tender_items"}:
+        item_id = context.get("selected_record_id")
+    if item_id:
+        try:
+            item_id = int(item_id)
+        except (TypeError, ValueError):
+            item_id = None
+        item = next((item for item in tender.items if item.id == item_id), None)
+        if item is None:
+            return {"response_type": "answer", "message": "The selected tender item was not found in this tender.", "intermediate_steps": [], "actions": []}
+        sources.append((f"Tender item #{item.id}", " ".join(filter(None, (item.description, item.specification_summary)))))
+    else:
+        document_ids = selected_document_ids if selected_document_ids is not None else context.get("selected_document_ids")
+        if document_ids:
+            try:
+                identifiers = {int(value) for value in document_ids}
+            except (TypeError, ValueError):
+                identifiers = set()
+            documents = [doc for doc in tender.documents if doc.id in identifiers]
+        else:
+            # Do not arbitrarily choose a file from a tender with multiple documents.
+            documents = list(tender.documents) if len(tender.documents) == 1 else []
+        for document in documents:
+            for line in (document.extracted_text or "").splitlines():
+                if "delivery schedule" in line.lower():
+                    sources.append((f"Document #{document.id}: {document.original_filename}", line.strip()))
+        if not sources and not document_ids:
+            # Item-list view may provide no explicit selection: permit one unambiguous match.
+            for item in tender.items:
+                text = " ".join(filter(None, (item.description, item.specification_summary)))
+                if "delivery schedule" in text.lower():
+                    sources.append((f"Tender item #{item.id}", text))
+    proposals = []
+    for label, text in sources:
+        parsed = build_delivery_items(text, label)
+        if parsed:
+            proposals.append((label, parsed))
+    if len(proposals) != 1:
+        explanation = (
+            "Multiple delivery schedules matched. Select one document or item and retry."
+            if len(proposals) > 1 else
+            "I could not find one complete delivery schedule in the selected item or document. "
+            "Select the source or paste its full description into chat."
+        )
+        return {"response_type": "answer", "message": explanation,
+                "intermediate_steps": ["Checked selected tender sources for a complete monthly delivery schedule."], "actions": []}
+    label, items = proposals[0]
+    preview = "\n".join(
+        f"- {item['delivery_month']}: {item['quantity_required']} {item['delivery_unit']}"
+        for item in items
+    )
+    total = sum(int(item["quantity_required"]) for item in items)
+    return {
+        "response_type": "proposed_action",
+        "message": (
+            f"Found {len(items)} monthly deliveries in {label}:\n{preview}\n"
+            f"**Total: {total:,}**. Each new item will retain the product specification. "
+            "The original item or document will remain unchanged.\n\n"
+            "Reply with 'confirm' to create the new tender items."
+        ),
+        "intermediate_steps": [
+            f"Read selected source: {label}.",
+            f"Extracted {len(items)} delivery months and {total} total units.",
+            "Prepared new tender items for confirmation; no database items have been created yet.",
+        ],
+        "actions": [{
+            "action_type": "split_item_by_delivery_schedule",
+            "tender_id": tender.id,
+            "items": items,
+            "requires_confirmation": True,
+        }],
+    }
 
 
 def _parse_item_request_lines(message: str) -> list[dict]:
@@ -1030,6 +1122,10 @@ def build_chat_response(
     normalized = _normalize(message)
     current_page = (page_context or {}).get("page")
 
+    # A schedule split reads the selected source, not quantity-x-item lines from the message.
+    if tender is not None and _delivery_schedule_request(normalized):
+        return _propose_delivery_schedule_items(message, page_context, tender, selected_document_ids)
+
     if tender is not None and (intent_hint == "product_search" or _heuristic_product_search_request(normalized)):
         try:
             message_text, steps = _run_product_search(message)
@@ -1586,7 +1682,9 @@ def apply_confirmed_action(action: ChatAction, data_dir: Path) -> str:
             )
         )
         return f"Created tender {tender.tender_number} from the pasted text and attached it as a markdown document."
-    if action.action_type == "add_items_from_message":
+    if action.action_type in {"add_items_from_message", "split_item_by_delivery_schedule"}:
+        if action.action_type == "split_item_by_delivery_schedule" and action.status != "proposed":
+            raise ValueError("This delivery-schedule proposal has already been processed.")
         tender = Tender.query.get(payload.get("tender_id"))
         if tender is None:
             raise ValueError("The target tender could not be found.")
