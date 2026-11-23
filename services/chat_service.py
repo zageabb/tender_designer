@@ -438,7 +438,7 @@ def _propose_delivery_schedule_items(
     for label, text in sources:
         # A selected file can contain several specifications. Never silently
         # pick the first schedule if multiple appear in one document.
-        if len(re.findall(r"\\b(?:tentative\\s+)?delivery\\s+schedule\\s*:", text, flags=re.I)) > 1:
+        if len(re.findall(r"\b(?:tentative\s+)?delivery\s+schedule\s*:", text, flags=re.I)) > 1:
             ambiguous_documents.append(label)
             continue
         parsed = build_delivery_items(text, label)
@@ -472,7 +472,7 @@ def _propose_delivery_schedule_items(
             "actions": [],
         }
     label, items = proposals[0]
-    preview = "\\n".join(
+    preview = "\n".join(
         f"- {item['delivery_month']}: {item['quantity_required']} {item['delivery_unit']}"
         for item in items
     )
@@ -480,9 +480,9 @@ def _propose_delivery_schedule_items(
     return {
         "response_type": "proposed_action",
         "message": (
-            f"Found {len(items)} monthly deliveries in {label}:\\n{preview}\\n"
+            f"Found {len(items)} monthly deliveries in {label}:\n{preview}\n"
             f"**Total: {total:,}**. Each new item will retain the product specification. "
-            "The original item or document will remain unchanged.\\n\\n"
+            "The original item or document will remain unchanged.\n\n"
             "Reply with 'confirm' to create the new tender items."
         ),
         "intermediate_steps": [
