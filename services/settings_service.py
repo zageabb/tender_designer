@@ -96,6 +96,10 @@ DEFAULT_SETTINGS = {
         "value": "993",
         "description": "IMAP SSL port used to sync mailbox messages.",
     },
+    "mail_imap_timeout_seconds": {
+        "value": "30",
+        "description": "Maximum idle time in seconds for an IMAP network operation (1-300).",
+    },
     "mail_inbox_folder": {
         "value": "INBOX",
         "description": "Mailbox folder to sync into Tender Designer.",

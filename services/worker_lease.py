@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import socket
 import threading
@@ -18,6 +19,7 @@ LEASE_SECONDS = 180
 HEARTBEAT_SECONDS = 60
 _heartbeat_names: set[str] = set()
 _heartbeat_lock = threading.Lock()
+logger = logging.getLogger(__name__)
 
 
 def _owner_process_is_alive(owner_id: str) -> bool | None:
@@ -77,15 +79,32 @@ def _start_heartbeat(app: Flask, name: str) -> None:
             return
         _heartbeat_names.add(name)
 
-    def heartbeat() -> None:
+    threading.Thread(target=_heartbeat_loop, args=(app, name), name=f"{name}-lease-heartbeat", daemon=True).start()
+
+
+def _refresh_worker_lease(app: Flask, name: str) -> bool:
+    with app.app_context():
+        lease = db.session.get(WorkerLease, name)
+        if lease is None or lease.owner_id != PROCESS_OWNER_ID:
+            return False
+        lease.expires_at = datetime.utcnow() + timedelta(seconds=LEASE_SECONDS)
+        lease.updated_at = datetime.utcnow()
+        db.session.commit()
+    return True
+
+
+def _heartbeat_loop(app: Flask, name: str) -> None:
+    try:
         while True:
             threading.Event().wait(HEARTBEAT_SECONDS)
-            with app.app_context():
-                lease = db.session.get(WorkerLease, name)
-                if lease is None or lease.owner_id != PROCESS_OWNER_ID:
+            try:
+                if not _refresh_worker_lease(app, name):
                     return
-                lease.expires_at = datetime.utcnow() + timedelta(seconds=LEASE_SECONDS)
-                lease.updated_at = datetime.utcnow()
-                db.session.commit()
-
-    threading.Thread(target=heartbeat, name=f"{name}-lease-heartbeat", daemon=True).start()
+            except Exception:
+                logger.exception("worker lease heartbeat failed; retrying lease=%s", name)
+                with app.app_context():
+                    db.session.rollback()
+                    db.session.remove()
+    finally:
+        with _heartbeat_lock:
+            _heartbeat_names.discard(name)

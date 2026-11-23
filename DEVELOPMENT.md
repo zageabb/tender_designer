@@ -32,6 +32,36 @@ For coding work, an empty result, no write/edit action, unchanged branch HEAD, e
 
 ## Development ledger
 
+### DEV-002 — Prevent mailbox sync workers from hanging indefinitely
+Status: ⏳ AWAITING ACCEPTANCE
+Priority: High
+Owner/Agent: Codex
+Branch: main
+Depends on: None
+Can run in parallel with: Unrelated tender workflows
+Integration status: tested and ready for deployment
+
+Requirement: A stalled Gmail IMAP operation must not leave a mailbox sync job permanently running, and a transient database/storage failure must not permanently stop worker-lease heartbeats.
+
+Implementation: IMAP connections use a configurable per-operation timeout with a safe 30-second default and 300-second cap. Worker-lease heartbeat threads now roll back failed sessions, retry after transient failures, and release their in-process registration if ownership ends.
+
+Evidence:
+- Commit: pending.
+- Files: `services/mailbox_service.py`, `services/settings_service.py`, `services/worker_lease.py`, `tests/test_async_mailbox_service.py`, `README.md`
+- Tests: `pytest -q tests/test_async_mailbox_service.py` (10 passed); `pytest -q` (67 passed).
+- CI: pending.
+- Deployment: pending.
+- User/business acceptance: pending.
+
+Completion criteria:
+- [x] IMAP operations have a bounded timeout.
+- [x] Invalid timeout settings fall back safely and excessive values are capped.
+- [x] Worker-lease heartbeats survive transient database failures.
+- [x] Focused and complete automated test suites pass.
+- [ ] Change is committed and pushed to `main`.
+- [ ] Change is deployed and the production mailbox queue drains.
+- [ ] User acceptance is recorded separately.
+
 ### DEV-001 — Make AI metadata extraction resilient to duplicate tender numbers
 Status: ⏳ AWAITING ACCEPTANCE
 Priority: High

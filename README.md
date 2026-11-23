@@ -247,6 +247,7 @@ Relevant Settings keys:
 - `mail_from_name`
 - `mail_imap_host`
 - `mail_imap_port`
+- `mail_imap_timeout_seconds` (defaults to 30 seconds; capped at 300)
 - `mail_inbox_folder`
 - `mail_sync_limit`
 - `mail_smtp_host`
@@ -260,6 +261,7 @@ Current behavior:
 
 - Inbox sync pulls the full `INBOX` history
 - Other folders still respect `mail_sync_limit`
+- IMAP operations time out instead of leaving a mailbox job blocked indefinitely
 - Mailbox deletions are also synced back toward Gmail
 - Mailbox sync jobs and deletion requests are visible in Admin
 

@@ -19,6 +19,7 @@ from app import create_app  # noqa: E402
 from database import db  # noqa: E402
 from models import AppSetting, MailboxSyncJob, WorkerLease  # noqa: E402
 from services import mailbox_jobs  # noqa: E402
+from services import mailbox_service, worker_lease  # noqa: E402
 
 
 class AsyncMailboxServiceTestCase(unittest.TestCase):
@@ -120,6 +121,38 @@ class AsyncMailboxServiceTestCase(unittest.TestCase):
             job = db.session.get(MailboxSyncJob, job_id)
             self.assertEqual(job.status, "failed")
             self.assertEqual(job.error_message, "IMAP timed out")
+
+    def test_mailbox_connection_uses_configured_timeout(self) -> None:
+        settings = {
+            "mail_imap_host": "imap.example.test",
+            "mail_imap_port": "1993",
+            "mail_username": "mailbox-user",
+            "mail_app_password": "mailbox-password",
+            "mail_imap_timeout_seconds": "45",
+        }
+        with patch(
+            "services.mailbox_service.get_setting",
+            side_effect=lambda key, default=None: settings.get(key, default),
+        ), patch("services.mailbox_service.imaplib.IMAP4_SSL") as imap:
+            mailbox = mailbox_service._connect_mailbox()
+
+        imap.assert_called_once_with("imap.example.test", 1993, timeout=45.0)
+        mailbox.login.assert_called_once_with("mailbox-user", "mailbox-password")
+
+    def test_invalid_mailbox_timeout_uses_safe_default(self) -> None:
+        with patch("services.mailbox_service.get_setting", return_value="not-a-number"):
+            self.assertEqual(mailbox_service._imap_timeout_seconds(), 30.0)
+        with patch("services.mailbox_service.get_setting", return_value="999"):
+            self.assertEqual(mailbox_service._imap_timeout_seconds(), 300.0)
+
+    def test_worker_lease_heartbeat_retries_after_transient_failure(self) -> None:
+        with patch("services.worker_lease.threading.Event.wait"), patch(
+            "services.worker_lease._refresh_worker_lease",
+            side_effect=[RuntimeError("temporary database failure"), False],
+        ) as refresh:
+            worker_lease._heartbeat_loop(self.app, "mailbox-sync-worker")
+
+        self.assertEqual(refresh.call_count, 2)
 
     def test_automatic_sync_settings_and_duplicate_protection(self) -> None:
         now = datetime.utcnow()

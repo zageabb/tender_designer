@@ -24,6 +24,10 @@ from services.managed_paths import ManagedPathError, resolve_managed_path
 from services.settings_service import get_setting
 
 
+DEFAULT_IMAP_TIMEOUT_SECONDS = 30
+MAX_IMAP_TIMEOUT_SECONDS = 300
+
+
 def mailbox_is_configured() -> bool:
     return bool(get_setting("mail_username")) and bool(get_setting("mail_app_password"))
 
@@ -109,12 +113,23 @@ def _message_uid_from_identifier(provider_message_id: str | None) -> str | None:
     return None
 
 
+def _imap_timeout_seconds() -> float:
+    raw_value = get_setting("mail_imap_timeout_seconds", str(DEFAULT_IMAP_TIMEOUT_SECONDS))
+    try:
+        timeout = float(raw_value or DEFAULT_IMAP_TIMEOUT_SECONDS)
+    except (TypeError, ValueError):
+        return float(DEFAULT_IMAP_TIMEOUT_SECONDS)
+    if timeout <= 0:
+        return float(DEFAULT_IMAP_TIMEOUT_SECONDS)
+    return min(timeout, float(MAX_IMAP_TIMEOUT_SECONDS))
+
+
 def _connect_mailbox() -> imaplib.IMAP4_SSL:
     host = get_setting("mail_imap_host", "imap.gmail.com") or "imap.gmail.com"
     port = int(get_setting("mail_imap_port", "993") or "993")
     username = get_setting("mail_username", "")
     password = get_setting("mail_app_password", "")
-    mailbox = imaplib.IMAP4_SSL(host, port)
+    mailbox = imaplib.IMAP4_SSL(host, port, timeout=_imap_timeout_seconds())
     mailbox.login(username, password)
     return mailbox
 
